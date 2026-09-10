@@ -167,6 +167,53 @@ std::vector<double> nice_ticks(double lo, double hi, int max_ticks) {
     return ticks;
 }
 
+std::vector<double> scale_ticks(const ValueScale& scale, int max_ticks) {
+    if (scale.type() == ScaleType::linear) {
+        return nice_ticks(scale.min(), scale.max(), max_ticks);
+    }
+    // Round to a readable value near each evenly spaced position.
+    const auto round_nice = [](double value) {
+        if (value == 0.0 || !std::isfinite(value)) return 0.0;
+        const double magnitude = std::pow(10.0, std::floor(std::log10(std::fabs(value))));
+        const double candidates[] = {1.0, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0};
+        double best = magnitude;
+        double best_error = std::fabs(value) / magnitude;
+        for (double candidate : candidates) {
+            const double error = std::fabs(std::fabs(value) / magnitude - candidate);
+            if (error < best_error) {
+                best_error = error;
+                best = candidate * magnitude;
+            }
+        }
+        return std::copysign(best, value);
+    };
+
+    std::vector<double> ticks;
+    const int count = std::max(2, max_ticks);
+    for (int i = 0; i < count; ++i) {
+        const double unit = static_cast<double>(i) / (count - 1);
+        const double value = round_nice(scale.denormalize(unit));
+        if (!std::isfinite(value)) continue;
+        if (value < scale.min() || value > scale.max()) continue;
+        if (!ticks.empty() && std::fabs(value - ticks.back()) <=
+                                  std::max(std::fabs(value), 1.0) * 1e-9) {
+            continue;
+        }
+        ticks.push_back(value);
+    }
+    if (ticks.empty()) ticks.push_back(scale.min());
+    return ticks;
+}
+
+double tick_step(const std::vector<double>& ticks) {
+    if (ticks.size() < 2) return 0.0;
+    double step = std::fabs(ticks[1] - ticks[0]);
+    for (std::size_t i = 2; i < ticks.size(); ++i) {
+        step = std::min(step, std::fabs(ticks[i] - ticks[i - 1]));
+    }
+    return step;
+}
+
 std::string format_tick(double value, double step) {
     if (!std::isfinite(value)) return "";
     const double magnitude = std::max(std::fabs(value), std::fabs(step));

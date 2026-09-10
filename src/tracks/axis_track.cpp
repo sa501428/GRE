@@ -78,23 +78,35 @@ void AxisTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     label.align = TextAlign::center;
     label.valign = above ? VerticalAlign::bottom : VerticalAlign::top;
 
+    // The region label owns the right-hand end of the rule; tick labels that
+    // would run into it are dropped rather than overprinted.
+    std::string region_text;
+    double region_left = rect.content.right() + 1.0;
+    TextStyle region_style = label;
+    if (show_region_) {
+        region_style.align = TextAlign::right;
+        region_style.color = theme_ref.muted;
+        region_style.size = theme_ref.small_font_size;
+        region_text = format_region(view().x_region.chrom, view().x_region.start,
+                                    view().x_region.end);
+        region_left = rect.content.right() -
+                      canvas.measure_text(region_text, region_style).width - 6.0;
+    }
+
     for (long long tick : ticks_) {
         const double x = rect.x.x(static_cast<std::int64_t>(tick));
         if (x < rect.content.left() - 0.5 || x > rect.content.right() + 0.5) continue;
         canvas.stroke_line(Point{x, line_y}, Point{x, tick_end}, stroke);
-        canvas.draw_text(Point{x, above ? tick_end - 1.0 : tick_end + 1.0},
-                         format_position(tick, step_), label);
+
+        const std::string text = format_position(tick, step_);
+        const double half = canvas.measure_text(text, label).width / 2.0;
+        if (x + half > region_left) continue;
+        canvas.draw_text(Point{x, above ? tick_end - 1.0 : tick_end + 1.0}, text, label);
     }
 
     if (show_region_) {
-        TextStyle region_style = label;
-        region_style.align = TextAlign::right;
-        region_style.color = theme_ref.muted;
-        region_style.size = theme_ref.small_font_size;
         canvas.draw_text(Point{rect.content.right(), above ? tick_end - 1.0 : tick_end + 1.0},
-                         format_region(view().x_region.chrom, view().x_region.start,
-                                       view().x_region.end),
-                         region_style);
+                         region_text, region_style);
     }
 }
 

@@ -98,6 +98,15 @@ private:
 // 1/2/5 x 10^k spacing covering [lo, hi].
 [[nodiscard]] std::vector<double> nice_ticks(double lo, double hi, int max_ticks);
 
+// Ticks for a scale of any type.  Linear scales get `nice_ticks`; logarithmic
+// ones get values that are evenly spaced *on the axis* and then rounded, so a
+// log colour bar does not bunch every label at one end.
+[[nodiscard]] std::vector<double> scale_ticks(const ValueScale& scale, int max_ticks);
+
+// Smallest gap between consecutive ticks, which is what decides how many
+// decimals a label needs.  Returns 0 for fewer than two ticks.
+[[nodiscard]] double tick_step(const std::vector<double>& ticks);
+
 // Formats a value with the fewest digits that still distinguishes neighbouring
 // ticks spaced `step` apart.
 [[nodiscard]] std::string format_tick(double value, double step);
