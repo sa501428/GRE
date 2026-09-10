@@ -158,8 +158,7 @@ ColorMap ColorMap::from_stops(const std::vector<std::pair<double, Color>>& stops
     if (stops.empty()) {
         throw Error(ErrorCode::invalid_argument, "a colour map needs at least one stop");
     }
-    ColorMap map;
-    map.name_.clear();
+    ColorMap map{Uninitialized{}};
     for (std::size_t i = 0; i < kLutSize; ++i) {
         const double t = static_cast<double>(i) / static_cast<double>(kLutSize - 1);
         if (t <= stops.front().first) {

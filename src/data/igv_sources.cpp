@@ -108,7 +108,9 @@ struct IgvSignalSource::Impl {
 IgvSignalSource::IgvSignalSource(std::string path) : impl_(std::make_unique<Impl>()) {
     impl_->path = std::move(path);
     try {
-        igv::AnyReader opened = igv::open_reader(igv::Resource{impl_->path});
+        igv::Resource resource;
+        resource.uri = impl_->path;
+        igv::AnyReader opened = igv::open_reader(resource);
         auto* signal = std::get_if<std::unique_ptr<igv::SignalReader>>(&opened);
         if (signal == nullptr) {
             throw Error(ErrorCode::invalid_argument,
@@ -225,7 +227,9 @@ struct IgvFeatureSource::Impl {
 IgvFeatureSource::IgvFeatureSource(std::string path) : impl_(std::make_unique<Impl>()) {
     impl_->path = std::move(path);
     try {
-        igv::AnyReader opened = igv::open_reader(igv::Resource{impl_->path});
+        igv::Resource resource;
+        resource.uri = impl_->path;
+        igv::AnyReader opened = igv::open_reader(resource);
         auto* features = std::get_if<std::unique_ptr<igv::FeatureReader>>(&opened);
         if (features == nullptr) {
             throw Error(ErrorCode::invalid_argument,

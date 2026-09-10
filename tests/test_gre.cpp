@@ -366,17 +366,42 @@ void test_layout() {
     figure.set_size(400.0, 300.0);
     CHECK(figure.computed_size().height == 300.0);
 
-    // Flexible tracks absorb the surplus.
-    Figure flexible;
-    flexible.set_size(400.0, 300.0).set_margins(Insets{0.0});
-    Panel& stretch = flexible.add_panel();
-    stretch.set_region("chr1", 1000, 4000).set_track_spacing(0.0);
-    SignalTrack& fixed = stretch.add_track(SignalTrack{signal}.height(50.0).margins(Insets{0.0}));
-    SignalTrack& growing =
-        stretch.add_track(SignalTrack{signal}.height(50.0).flex(1.0).margins(Insets{0.0}));
-    CHECK(flexible.computed_size().height == 300.0);
-    CHECK(fixed.preferred_height() == 50.0);
-    CHECK_NEAR(growing.preferred_height(), 250.0, 0.5);
+    // Flexible tracks absorb the surplus of a fixed-height page.  Layout does
+    // not write back into the track, so this is checked through what is drawn:
+    // a constant signal fills its whole track, and the lowest inked row shows
+    // how tall that track ended up.
+    auto flat = MemorySignalSource::make("chr1", {{1000, 4000, 10.0}});
+    const auto build = [&flat](double flex_weight) {
+        Figure figure;
+        figure.set_size(200.0, 300.0).set_margins(Insets{0.0});
+        Panel& panel = figure.add_panel();
+        panel.set_region("chr1", 1000, 4000).set_track_spacing(0.0).set_label_width(0.0);
+        panel.add_track(SignalTrack{flat}
+                            .style(SignalStyle::area)
+                            .limits(0.0, 10.0)
+                            .show_range_label(false)
+                            .height(50.0)
+                            .flex(flex_weight)
+                            .margins(Insets{0.0})
+                            .show_name(false));
+        return figure.render_image(72.0);
+    };
+
+    const auto lowest_inked_row = [](const Image& image) {
+        for (int y = image.height() - 1; y >= 0; --y) {
+            for (int x = 0; x < image.width(); ++x) {
+                if (image.get(x, y) != colors::white) return y;
+            }
+        }
+        return -1;
+    };
+
+    const Image rigid = build(0.0);
+    const Image stretched = build(1.0);
+    CHECK(rigid.height() == 300 && stretched.height() == 300);
+    // Without flex the track keeps its 50 pt; with it, it grows to the page.
+    CHECK(lowest_inked_row(rigid) >= 45 && lowest_inked_row(rigid) <= 55);
+    CHECK(lowest_inked_row(stretched) >= 295);
 }
 
 void test_signal_source() {
@@ -556,7 +581,7 @@ void test_errors() {
     Figure empty;
     bool threw = false;
     try {
-        empty.computed_size();
+        (void)empty.computed_size();
     } catch (const Error& error) {
         threw = error.code() == ErrorCode::invalid_argument;
     }
@@ -573,7 +598,7 @@ void test_errors() {
 
     threw = false;
     try {
-        ColorMap::named("definitely-not-a-colour-map");
+        (void)ColorMap::named("definitely-not-a-colour-map");
     } catch (const Error& error) {
         threw = error.code() == ErrorCode::not_found;
     }

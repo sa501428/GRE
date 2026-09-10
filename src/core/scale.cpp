@@ -214,10 +214,12 @@ std::string format_position(long long position, long long step) {
         return std::string(buffer);
     };
 
-    if (step >= 1'000'000) {
+    // Switch units well before the step reaches a whole unit: at 500 kb
+    // spacing "1.5 Mb" reads better than "1500 kb".
+    if (step >= 100'000) {
         return render(static_cast<double>(position) / 1e6, 1'000'000, step, "Mb");
     }
-    if (step >= 1'000) {
+    if (step >= 100) {
         return render(static_cast<double>(position) / 1e3, 1'000, step, "kb");
     }
     return group_digits(position) + " bp";

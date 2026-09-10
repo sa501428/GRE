@@ -103,6 +103,11 @@ public:
     [[nodiscard]] const std::string& name() const noexcept { return name_; }
 
 private:
+    // Builders use this instead of the public default constructor, which would
+    // otherwise recurse: ColorMap() -> named() -> from_stops() -> ColorMap().
+    struct Uninitialized {};
+    explicit ColorMap(Uninitialized) noexcept {}
+
     std::array<Color, kLutSize> lut_{};
     Color bad_{colors::transparent};
     std::string name_;
