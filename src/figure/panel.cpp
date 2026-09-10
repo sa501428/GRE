@@ -37,6 +37,31 @@ Track& Panel::add_track(std::unique_ptr<Track> track) {
     return reference;
 }
 
+Track& Panel::set_matrix(std::unique_ptr<Track> track) {
+    if (track == nullptr) throw Error(ErrorCode::invalid_argument, "null matrix track");
+    matrix_ = std::move(track);
+    return *matrix_;
+}
+
+Track& Panel::add_y_track(std::unique_ptr<Track> track) {
+    if (track == nullptr) throw Error(ErrorCode::invalid_argument, "null track");
+    Track& reference = *track;
+    y_tracks_.push_back(std::move(track));
+    return reference;
+}
+
+Track& Panel::add_bottom_track(std::unique_ptr<Track> track) {
+    if (track == nullptr) throw Error(ErrorCode::invalid_argument, "null track");
+    Track& reference = *track;
+    bottom_tracks_.push_back(std::move(track));
+    return reference;
+}
+
+Panel& Panel::set_y_label_height(double height) {
+    y_label_height_ = height;
+    return *this;
+}
+
 Panel& Panel::set_title(std::string title) {
     title_ = std::move(title);
     return *this;

@@ -119,21 +119,34 @@ void ColorBarTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     text.size = theme_ref.small_font_size;
     text.color = theme_ref.foreground;
 
+    // The bar's own extent, so the title can sit over it wherever it is placed.
+    const double bar_width = orientation_ == BarOrientation::horizontal
+                                 ? std::min(bar_length_, rect.content.width)
+                                 : bar_thickness_;
+    const double bar_x = aligned_left(align_, rect.content, bar_width);
+
     double top = rect.content.top();
     if (!title_.empty()) {
         TextStyle title_style = text;
         title_style.valign = VerticalAlign::top;
-        title_style.align = orientation_ == BarOrientation::horizontal && align_ == BarAlign::center
-                                ? TextAlign::center
-                                : TextAlign::left;
-        const double x = title_style.align == TextAlign::center ? rect.content.center_x()
-                                                                : rect.content.left();
+        title_style.align = TextAlign::left;
+        // Keep the title with the bar rather than pinned to the track's edge.
+        double x = bar_x;
+        if (align_ == BarAlign::center) {
+            title_style.align = TextAlign::center;
+            x = bar_x + bar_width / 2.0;
+        } else if (align_ == BarAlign::right) {
+            title_style.align = TextAlign::right;
+            x = bar_x + bar_width;
+        }
         canvas.draw_text(Point{x, top}, title_, title_style);
         top += label_height + kTitleGap;
     }
 
-    const std::vector<double> ticks = nice_ticks(scale_.min(), scale_.max(), max_ticks_);
-    const double step = ticks.size() >= 2 ? ticks[1] - ticks[0]
+    // Ticks follow the scale's own spacing, so a log bar does not crowd every
+    // label at one end.
+    const std::vector<double> ticks = scale_ticks(scale_, max_ticks_);
+    const double step = ticks.size() >= 2 ? tick_step(ticks)
                                           : std::fabs(scale_.max() - scale_.min());
 
     StrokeStyle stroke;
@@ -141,8 +154,7 @@ void ColorBarTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     stroke.width = border_width_;
 
     if (orientation_ == BarOrientation::horizontal) {
-        const double width = std::min(bar_length_, rect.content.width);
-        const Rect bar{aligned_left(align_, rect.content, width), top, width, bar_thickness_};
+        const Rect bar{bar_x, top, bar_width, bar_thickness_};
         canvas.draw_image(bar, gradient_.view(ImageScaling::bilinear));
         if (has_border_) canvas.stroke_rect(bar, stroke);
 
@@ -155,9 +167,9 @@ void ColorBarTrack::draw(Canvas& canvas, const TrackRect& rect) const {
                              format_tick(tick, step), text);
         }
     } else {
-        const double height = std::min(bar_length_, rect.content.height - (top - rect.content.top()));
-        const Rect bar{aligned_left(align_, rect.content, bar_thickness_), top, bar_thickness_,
-                       height};
+        const double height =
+            std::min(bar_length_, rect.content.height - (top - rect.content.top()));
+        const Rect bar{bar_x, top, bar_thickness_, height};
         canvas.draw_image(bar, gradient_.view(ImageScaling::bilinear));
         if (has_border_) canvas.stroke_rect(bar, stroke);
 

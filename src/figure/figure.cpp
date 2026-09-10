@@ -7,12 +7,20 @@
 #include "gre/core/scale.hpp"
 #include "gre/export/png.hpp"
 #include "gre/render/raster_canvas.hpp"
+#include "render/rotated_canvas.hpp"
 
 namespace gre {
 namespace {
 
 constexpr double kTitleGap = 5.0;
 constexpr double kPanelTitleGap = 3.0;
+constexpr double kNameGap = 4.0;
+
+// Tracks are clipped a little loosely: glyph descenders, axis ticks and range
+// labels legitimately sit just outside the plotting box.
+Rect clip_for(const Rect& rect) {
+    return Rect{rect.left() - 2.0, rect.top() - 24.0, rect.width + 4.0, rect.height + 48.0};
+}
 
 }  // namespace
 
@@ -98,14 +106,47 @@ Figure::Layout Figure::build_layout(double device_scale) {
 
     // ---- pass one: prepare every track and collect natural heights ---------
     struct Prepared {
-        std::vector<double> heights;
+        std::vector<double> heights;  // x tracks, above the map
         std::vector<double> flex;
+        std::vector<double> bottom_heights;  // x tracks, below the map
+        std::vector<double> bottom_flex;
+        std::vector<double> y_widths;  // side tracks, square panels only
         double label_width{};
         double title_height{};
         double natural_height{};
         double plot_left{};
         double plot_right{};
         double spacing{};
+        // Square panels only.
+        double map_left{};
+        double map_side{};
+        double y_label_height{};
+
+        [[nodiscard]] double total_flex() const {
+            double total = 0.0;
+            for (double f : flex) total += f;
+            for (double f : bottom_flex) total += f;
+            return total;
+        }
+
+        // Hands `slack` to the flexible tracks in either band, in proportion to
+        // `total` (which may span several panels).  Returns how much was used.
+        double distribute(double slack, double total) {
+            if (!(total > 0.0)) return 0.0;
+            double used = 0.0;
+            const auto share_out = [&](std::vector<double>& sizes,
+                                       const std::vector<double>& weights) {
+                for (std::size_t i = 0; i < sizes.size(); ++i) {
+                    if (weights[i] <= 0.0) continue;
+                    const double share = slack * weights[i] / total;
+                    sizes[i] = std::max(0.0, sizes[i] + share);
+                    used += share;
+                }
+            };
+            share_out(heights, flex);
+            share_out(bottom_heights, bottom_flex);
+            return used;
+        }
     };
     std::vector<Prepared> prepared(panels_.size());
 
@@ -137,44 +178,118 @@ Figure::Layout Figure::build_layout(double device_scale) {
         context.device_scale = device_scale;
         context.theme = &theme_;
 
-        state.heights.resize(panel.tracks_.size());
-        state.flex.resize(panel.tracks_.size());
-        double stack = 0.0;
-        for (std::size_t t = 0; t < panel.tracks_.size(); ++t) {
-            Track& track = *panel.tracks_[t];
-            const double plot_left =
-                track.wants_label_gutter() ? state.plot_left : left + panel.padding_.left;
-            // The width is final here; the height is only a hint, so tracks
-            // that size themselves (heatmaps, gene models) work it out during
-            // prepare().
-            context.content =
-                Rect{plot_left, 0.0, state.plot_right - plot_left, track.preferred_height()};
-            track.prepare(context);
+        // Square panels reserve columns on the left for the quarter-turned
+        // tracks, and the map takes whatever square fits in what is left.
+        state.map_left = state.plot_left;
+        state.map_side = state.plot_right - state.plot_left;
+        if (panel.square_layout()) {
+            const double available = state.plot_right - state.plot_left;
+            state.y_widths.resize(panel.y_tracks_.size());
 
-            state.heights[t] = std::max(0.0, track.preferred_height());
-            state.flex[t] = std::max(0.0, track.flex());
-            stack += state.heights[t] + track.margins().vertical();
+            const auto columns_total = [&]() {
+                double total = 0.0;
+                for (std::size_t i = 0; i < state.y_widths.size(); ++i) {
+                    total += state.y_widths[i] + panel.y_tracks_[i]->margins().vertical();
+                }
+                if (!panel.y_tracks_.empty()) {
+                    total += state.spacing * static_cast<double>(panel.y_tracks_.size() - 1);
+                }
+                return total;
+            };
+
+            for (std::size_t i = 0; i < panel.y_tracks_.size(); ++i) {
+                state.y_widths[i] = std::max(0.0, panel.y_tracks_[i]->preferred_height());
+            }
+            double side = available - columns_total();
+
+            // Side tracks run over the y region, in their own local frame:
+            // local x is genomic and spans the map, local y is the column.
+            const auto prepare_side_tracks = [&](double map_side) {
+                ViewContext side_context = context;
+                side_context.x_region = panel.region_y();
+                side_context.y_region = panel.region_y();
+                for (std::size_t i = 0; i < panel.y_tracks_.size(); ++i) {
+                    side_context.content = Rect{0.0, 0.0, std::max(map_side, 1.0),
+                                                state.y_widths[i]};
+                    panel.y_tracks_[i]->prepare(side_context);
+                    state.y_widths[i] = std::max(0.0, panel.y_tracks_[i]->preferred_height());
+                }
+            };
+            prepare_side_tracks(side);
+
+            // A track that sized itself during prepare (gene rows, say) changes
+            // the column total, so settle the square once more.
+            const double refined = available - columns_total();
+            if (std::fabs(refined - side) > 0.5) {
+                side = refined;
+                prepare_side_tracks(side);
+            }
+            state.map_side = std::max(available - columns_total(), 1.0);
+            state.map_left = state.plot_right - state.map_side;
+
+            bool any_side_name = false;
+            for (const auto& track : panel.y_tracks_) {
+                if (track->show_name() && !track->name().empty()) any_side_name = true;
+            }
+            if (any_side_name) {
+                state.y_label_height = panel.y_label_height_ >= 0.0
+                                           ? panel.y_label_height_
+                                           : font.line_height(theme_.font_size) + 2.0;
+            }
         }
-        if (!panel.tracks_.empty()) {
-            stack += state.spacing * static_cast<double>(panel.tracks_.size() - 1);
+
+        // Both horizontal bands are prepared the same way; the width is final
+        // here, while the height is only a hint, so tracks that size
+        // themselves (heatmaps, gene models) work it out during prepare().
+        const auto prepare_band = [&](const std::vector<std::unique_ptr<Track>>& band,
+                                      std::vector<double>& heights, std::vector<double>& flex) {
+            heights.assign(band.size(), 0.0);
+            flex.assign(band.size(), 0.0);
+            double stack = 0.0;
+            for (std::size_t t = 0; t < band.size(); ++t) {
+                Track& track = *band[t];
+                const double plot_left =
+                    track.wants_label_gutter() ? state.map_left : left + panel.padding_.left;
+                context.content =
+                    Rect{plot_left, 0.0, state.plot_right - plot_left, track.preferred_height()};
+                track.prepare(context);
+
+                heights[t] = std::max(0.0, track.preferred_height());
+                flex[t] = std::max(0.0, track.flex());
+                stack += heights[t] + track.margins().vertical();
+            }
+            if (!band.empty()) stack += state.spacing * static_cast<double>(band.size() - 1);
+            return stack;
+        };
+
+        const double top_stack = prepare_band(panel.tracks_, state.heights, state.flex);
+        const double bottom_stack =
+            prepare_band(panel.bottom_tracks_, state.bottom_heights, state.bottom_flex);
+
+        // The panel is up to three horizontal bands: tracks, then the square
+        // map (when there is one), then the bottom tracks.
+        double content_height = top_stack;
+        if (panel.square_layout()) {
+            ViewContext matrix_context = context;
+            matrix_context.content = Rect{state.map_left, 0.0, state.map_side, state.map_side};
+            panel.matrix_->prepare(matrix_context);
+            if (!panel.tracks_.empty()) content_height += state.spacing;
+            content_height += state.map_side + panel.matrix_->margins().vertical() +
+                              state.y_label_height;
+        }
+        if (!panel.bottom_tracks_.empty()) {
+            if (!panel.tracks_.empty() || panel.square_layout()) content_height += state.spacing;
+            content_height += bottom_stack;
         }
 
         const double natural =
-            stack + panel.padding_.vertical() + state.title_height;
+            content_height + panel.padding_.vertical() + state.title_height;
         state.natural_height = panel.height_ > 0.0 ? panel.height_ : natural;
 
         // A panel with an explicit height hands the difference to its flexible
         // tracks.
         if (panel.height_ > 0.0) {
-            double total_flex = 0.0;
-            for (double f : state.flex) total_flex += f;
-            if (total_flex > 0.0) {
-                const double slack = panel.height_ - natural;
-                for (std::size_t t = 0; t < state.heights.size(); ++t) {
-                    state.heights[t] =
-                        std::max(0.0, state.heights[t] + slack * state.flex[t] / total_flex);
-                }
-            }
+            state.distribute(panel.height_ - natural, state.total_flex());
         }
     }
 
@@ -190,19 +305,13 @@ Figure::Layout Figure::build_layout(double device_scale) {
         double total_flex = 0.0;
         for (std::size_t p = 0; p < prepared.size(); ++p) {
             if (panels_[p]->height_ > 0.0) continue;  // already resolved
-            for (double f : prepared[p].flex) total_flex += f;
+            total_flex += prepared[p].total_flex();
         }
         const double slack = size_.height - natural_total;
         if (total_flex > 0.0 && slack != 0.0) {
             for (std::size_t p = 0; p < prepared.size(); ++p) {
                 if (panels_[p]->height_ > 0.0) continue;
-                Prepared& state = prepared[p];
-                for (std::size_t t = 0; t < state.heights.size(); ++t) {
-                    if (state.flex[t] <= 0.0) continue;
-                    const double share = slack * state.flex[t] / total_flex;
-                    state.heights[t] = std::max(0.0, state.heights[t] + share);
-                    state.natural_height += share;
-                }
+                prepared[p].natural_height += prepared[p].distribute(slack, total_flex);
             }
         }
         layout.size.height = size_.height;
@@ -223,41 +332,116 @@ Figure::Layout Figure::build_layout(double device_scale) {
         double content_top = y;
         double content_bottom = y;
 
-        for (std::size_t t = 0; t < panel.tracks_.size(); ++t) {
-            Track& track = *panel.tracks_[t];
-            const Insets& track_margins = track.margins();
-            y += track_margins.top;
+        bool placed_anything = false;
+        const auto place_band = [&](const std::vector<std::unique_ptr<Track>>& band,
+                                    const std::vector<double>& heights) {
+            if (band.empty()) return;
+            if (placed_anything) y += state.spacing;
+            for (std::size_t t = 0; t < band.size(); ++t) {
+                Track& track = *band[t];
+                const Insets& track_margins = track.margins();
+                y += track_margins.top;
 
-            const bool gutter = track.wants_label_gutter();
-            const double plot_left = gutter ? state.plot_left : left + panel.padding_.left;
-            const double reserve = std::min(track.label_reserve(), state.label_width);
+                const bool gutter = track.wants_label_gutter();
+                const double plot_left = gutter ? state.map_left : left + panel.padding_.left;
+                const double reserve = std::min(track.label_reserve(), state.label_width);
 
-            TrackLayout entry;
-            entry.track = &track;
-            entry.rect.full = Rect{left + panel.padding_.left, y,
-                                   state.plot_right - left - panel.padding_.left,
-                                   state.heights[t]};
-            entry.rect.content =
-                Rect{plot_left + track_margins.left, y,
-                     state.plot_right - plot_left - track_margins.horizontal(),
-                     state.heights[t]};
-            entry.rect.label =
-                gutter ? Rect{state.plot_left - reserve, y, reserve, state.heights[t]}
-                       : Rect{plot_left, y, 0.0, state.heights[t]};
-            entry.rect.x = GenomicTransform{panel.region(), entry.rect.content.left(),
-                                            entry.rect.content.right()};
-            entry.rect.y = GenomicTransform{panel.region_y(), entry.rect.content.top(),
-                                            entry.rect.content.bottom()};
-            placed.tracks.push_back(entry);
+                TrackLayout entry;
+                entry.track = &track;
+                entry.rect.full = Rect{plot_left, y, state.plot_right - plot_left, heights[t]};
+                entry.rect.content = Rect{plot_left + track_margins.left, y,
+                                          state.plot_right - plot_left -
+                                              track_margins.horizontal(),
+                                          heights[t]};
+                entry.rect.label = gutter ? Rect{plot_left - reserve, y, reserve, heights[t]}
+                                          : Rect{plot_left, y, 0.0, heights[t]};
+                entry.rect.x = GenomicTransform{panel.region(), entry.rect.content.left(),
+                                                entry.rect.content.right()};
+                entry.rect.y = GenomicTransform{panel.region_y(), entry.rect.content.top(),
+                                                entry.rect.content.bottom()};
+                entry.clip = clip_for(entry.rect.full);
+                entry.draw_name = gutter && track.show_name() && !track.name().empty();
+                entry.name_anchor =
+                    Point{entry.rect.label.left() - kNameGap, entry.rect.full.center_y()};
+                placed.tracks.push_back(entry);
 
-            if (t == 0) content_top = y;
-            content_bottom = y + state.heights[t];
-            y += state.heights[t] + track_margins.bottom;
-            if (t + 1 < panel.tracks_.size()) y += state.spacing;
+                if (!placed_anything) content_top = y;
+                placed_anything = true;
+                content_bottom = y + heights[t];
+                y += heights[t] + track_margins.bottom;
+                if (t + 1 < band.size()) y += state.spacing;
+            }
+        };
+
+        place_band(panel.tracks_, state.heights);
+
+        if (panel.square_layout()) {
+            if (placed_anything) y += state.spacing;
+            const Insets& matrix_margins = panel.matrix_->margins();
+            y += matrix_margins.top;
+            const double map_top = y;
+            const Rect map{state.map_left, map_top, state.map_side, state.map_side};
+
+            TrackLayout matrix_entry;
+            matrix_entry.track = panel.matrix_.get();
+            matrix_entry.rect.full = map;
+            matrix_entry.rect.content = map;
+            matrix_entry.rect.label = Rect{map.left(), map_top, 0.0, state.map_side};
+            matrix_entry.rect.x = GenomicTransform{panel.region(), map.left(), map.right()};
+            matrix_entry.rect.y = GenomicTransform{panel.region_y(), map.top(), map.bottom()};
+            matrix_entry.clip = clip_for(map);
+            matrix_entry.draw_name =
+                panel.matrix_->show_name() && !panel.matrix_->name().empty();
+            // The map's own name goes in the gutter, left of the side columns.
+            matrix_entry.name_anchor = Point{state.plot_left - kNameGap, map.center_y()};
+            placed.tracks.push_back(matrix_entry);
+
+            // Side columns, first added furthest from the map -- the mirror of
+            // how x tracks stack downwards towards it.
+            double column_x = state.plot_left;
+            for (std::size_t i = 0; i < panel.y_tracks_.size(); ++i) {
+                Track& track = *panel.y_tracks_[i];
+                const Insets& side_margins = track.margins();
+                // Local +y points page-left, so the local "bottom" margin is
+                // the gap on the left of the column.
+                const double column_left = column_x + side_margins.bottom;
+                const double column_right = column_left + state.y_widths[i];
+
+                TrackLayout entry;
+                entry.track = &track;
+                entry.side = true;
+                entry.rotation = -90.0;
+                entry.origin = Point{column_right, map_top};
+                entry.rect.full = Rect{0.0, 0.0, state.map_side, state.y_widths[i]};
+                entry.rect.content = entry.rect.full;
+                entry.rect.label = Rect{0.0, 0.0, 0.0, state.y_widths[i]};
+                entry.rect.x = GenomicTransform{panel.region_y(), 0.0, state.map_side};
+                entry.rect.y = entry.rect.x;
+                entry.clip = Rect{column_left - 1.0, map_top - 1.0, state.y_widths[i] + 2.0,
+                                  state.map_side + 2.0};
+                entry.draw_name = track.show_name() && !track.name().empty();
+                entry.name_anchor =
+                    Point{(column_left + column_right) / 2.0, map.bottom() + 2.0};
+                entry.name_align = TextAlign::center;
+                entry.name_valign = VerticalAlign::top;
+                placed.tracks.push_back(entry);
+
+                column_x += side_margins.vertical() + state.y_widths[i] + state.spacing;
+            }
+
+            if (!placed_anything) content_top = map_top;
+            placed_anything = true;
+            content_bottom = map.bottom();
+            y = map.bottom() + matrix_margins.bottom + state.y_label_height;
         }
 
-        placed.content = Rect::from_edges(state.plot_left, content_top, state.plot_right,
-                                          content_bottom);
+        // Grid lines and the panel border cover the data, not the legends that
+        // follow it.
+        const double data_bottom = content_bottom;
+        place_band(panel.bottom_tracks_, state.bottom_heights);
+
+        placed.content =
+            Rect::from_edges(state.map_left, content_top, state.plot_right, data_bottom);
         layout.panels.push_back(std::move(placed));
         cursor += state.natural_height + panel_spacing;
     }
@@ -310,9 +494,9 @@ void Figure::draw_layout(Canvas& canvas, const Layout& layout) const {
 
         // Grid lines run behind every track in the panel, so the eye can carry
         // a coordinate down the whole stack.
-        if (panel.show_grid_ && !panel_layout.content.empty() &&
-            !panel_layout.tracks.empty()) {
-            const GenomicTransform& transform = panel_layout.tracks.front().rect.x;
+        if (panel.show_grid_ && !panel_layout.content.empty()) {
+            const GenomicTransform transform{panel.region(), panel_layout.content.left(),
+                                             panel_layout.content.right()};
             StrokeStyle grid;
             grid.color = theme_.grid;
             grid.width = theme_.grid_line_width;
@@ -327,25 +511,29 @@ void Figure::draw_layout(Canvas& canvas, const Layout& layout) const {
         for (const TrackLayout& entry : panel_layout.tracks) {
             const Track& track = *entry.track;
 
-            // The name goes in whatever the track left of the gutter.
-            if (track.show_name() && !track.name().empty() && track.wants_label_gutter()) {
+            if (entry.draw_name) {
                 TextStyle style;
                 style.font = theme_.font;
                 style.size = theme_.font_size;
                 style.color = theme_.foreground;
-                style.align = TextAlign::right;
-                style.valign = VerticalAlign::middle;
-                canvas.draw_text(Point{entry.rect.label.left() - 4.0, entry.rect.full.center_y()},
-                                 track.name(), style);
+                style.align = entry.name_align;
+                style.valign = entry.name_valign;
+                canvas.draw_text(entry.name_anchor, track.name(), style);
             }
 
-            if (track.clipped()) {
-                // A generous vertical margin lets glyph descenders and axis
-                // ticks sit just outside the content box without being cut.
-                ClipGuard guard(canvas,
-                                Rect{entry.rect.full.left() - 2.0, entry.rect.full.top() - 24.0,
-                                     entry.rect.full.width + 4.0,
-                                     entry.rect.full.height + 48.0});
+            if (entry.side) {
+                // Side tracks draw in their own frame; the wrapper maps every
+                // primitive onto the page.
+                if (track.clipped()) {
+                    ClipGuard guard(canvas, entry.clip);
+                    RotatedCanvas rotated(canvas, entry.origin, entry.rotation);
+                    track.draw(rotated, entry.rect);
+                } else {
+                    RotatedCanvas rotated(canvas, entry.origin, entry.rotation);
+                    track.draw(rotated, entry.rect);
+                }
+            } else if (track.clipped()) {
+                ClipGuard guard(canvas, entry.clip);
                 track.draw(canvas, entry.rect);
             } else {
                 track.draw(canvas, entry.rect);

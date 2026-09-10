@@ -9,7 +9,10 @@
 #include <vector>
 
 #include "gre/gre.hpp"
-#include "render/truetype.hpp"  // internal: exercises the font subsetter directly
+// Internal headers: these tests exercise the font subsetter and the
+// quarter-turn canvas directly.
+#include "render/rotated_canvas.hpp"
+#include "render/truetype.hpp"
 
 namespace {
 
@@ -346,6 +349,94 @@ void test_draw_image() {
     CHECK(canvas.image().get(35, 35) == rgb(255, 255, 0));
 }
 
+void test_rotated_canvas() {
+    RasterCanvas target(Size{100.0, 100.0}, 72.0, colors::white);
+    // -90 puts local +x (the genomic axis) down the page and local +y to the
+    // left: the arrangement used for a column beside a square map.
+    RotatedCanvas rotated(target, Point{60.0, 20.0}, -90.0);
+    CHECK_NEAR(rotated.map(Point{0.0, 0.0}).x, 60.0, 1e-9);
+    CHECK_NEAR(rotated.map(Point{0.0, 0.0}).y, 20.0, 1e-9);
+    CHECK_NEAR(rotated.map(Point{10.0, 0.0}).y, 30.0, 1e-9);
+    CHECK_NEAR(rotated.map(Point{10.0, 0.0}).x, 60.0, 1e-9);
+    CHECK_NEAR(rotated.map(Point{0.0, 10.0}).x, 50.0, 1e-9);
+
+    // A local 40x20 rectangle becomes a page 20x40 one.
+    const Rect mapped = rotated.map_rect(Rect{0.0, 0.0, 40.0, 20.0});
+    CHECK_NEAR(mapped.left(), 40.0, 1e-9);
+    CHECK_NEAR(mapped.top(), 20.0, 1e-9);
+    CHECK_NEAR(mapped.width, 20.0, 1e-9);
+    CHECK_NEAR(mapped.height, 40.0, 1e-9);
+
+    rotated.fill_rect(Rect{0.0, 0.0, 40.0, 20.0}, rgb(255, 0, 0));
+    CHECK(target.image().get(50, 40) == rgb(255, 0, 0));
+    CHECK(target.image().get(30, 40) == colors::white);
+    CHECK(target.image().get(50, 10) == colors::white);
+
+    // Images are turned with the frame, so the data stays registered to the
+    // genomic axis.
+    Image source(2, 2);
+    source.set(0, 0, rgb(255, 0, 0));
+    source.set(1, 0, rgb(0, 255, 0));
+    source.set(0, 1, rgb(0, 0, 255));
+    source.set(1, 1, rgb(255, 255, 0));
+
+    RasterCanvas plain(Size{40.0, 40.0}, 72.0, colors::white);
+    RotatedCanvas turned(plain, Point{40.0, 0.0}, -90.0);
+    turned.draw_image(Rect{0.0, 0.0, 40.0, 40.0}, source.view(ImageScaling::nearest));
+    // Local (u, v) = (0.25, 0.25) is source (0, 0); it lands at page (30, 10).
+    CHECK(plain.image().get(30, 10) == rgb(255, 0, 0));
+    CHECK(plain.image().get(30, 30) == rgb(0, 255, 0));
+    CHECK(plain.image().get(10, 10) == rgb(0, 0, 255));
+    CHECK(plain.image().get(10, 30) == rgb(255, 255, 0));
+}
+
+void test_square_layout() {
+    std::vector<float> values(64, 1.0F);
+    auto matrix = MemoryMatrixSource::make(
+        MatrixRegion::square(GenomicRegion{"chr1", 0, 1000}), 125, 8, 8, values);
+    auto flat = MemorySignalSource::make("chr1", {{0, 1000, 10.0}});
+
+    // Map only: the square takes the whole plotting width.
+    Figure bare;
+    bare.set_width(400.0).set_margins(Insets{0.0});
+    Panel& bare_panel = bare.add_panel();
+    bare_panel.set_region("chr1", 0, 1000).set_label_width(0.0);
+    bare_panel.set_matrix(HeatmapTrack{matrix}.show_name(false));
+
+    const double gutter = bare.theme().right_gutter;
+    const Size bare_size = bare.computed_size();
+    CHECK(bare_size.width == 400.0);
+    // side + the matrix track's default 1pt margins top and bottom.
+    CHECK_NEAR(bare_size.height, 400.0 - gutter + 2.0, 0.5);
+
+    // A 30pt side column narrows the square by that column plus its margins.
+    Figure figure;
+    figure.set_width(400.0).set_margins(Insets{0.0});
+    Panel& panel = figure.add_panel();
+    panel.set_region("chr1", 0, 1000).set_label_width(0.0);
+    panel.add_y_track(SignalTrack{flat}
+                          .style(SignalStyle::area)
+                          .limits(0.0, 10.0)
+                          .show_range_label(false)
+                          .show_name(false)
+                          .height(30.0));
+    panel.set_matrix(HeatmapTrack{matrix}.show_name(false).colors("gray_r"));
+
+    const Size size = figure.computed_size();
+    const double expected_side = 400.0 - gutter - (30.0 + 2.0);
+    CHECK_NEAR(size.height, expected_side + 2.0, 0.5);
+
+    const Image image = figure.render_image(72.0);
+    // The column sits at x in [1, 31] and spans the map's full height.
+    CHECK(image.get(15, static_cast<int>(expected_side / 2.0)) != colors::white);
+    // The map begins after the column.
+    const int map_left = static_cast<int>(400.0 - gutter - expected_side);
+    CHECK(map_left > 30 && map_left < 40);
+    CHECK(image.get(map_left + 20, 20) != colors::white);
+    // Nothing is drawn to the left of the column.
+    CHECK(image.get(0, static_cast<int>(expected_side / 2.0)) == colors::white);
+}
+
 void test_layout() {
     auto signal = MemorySignalSource::make(
         "chr1", {{1000, 2000, 5.0}, {2000, 3000, 10.0}, {3000, 4000, 2.0}});
@@ -616,6 +707,8 @@ int main() {
     test_png_roundtrip();
     test_raster_canvas();
     test_draw_image();
+    test_rotated_canvas();
+    test_square_layout();
     test_layout();
     test_signal_source();
     test_matrix_source();

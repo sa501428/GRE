@@ -61,7 +61,17 @@ public:
 private:
     struct TrackLayout {
         Track* track{nullptr};
+        // Page coordinates for ordinary tracks; the track's own local frame
+        // for quarter-turned side tracks.
         TrackRect rect;
+        bool side{false};
+        double rotation{0.0};
+        Point origin{};   // page position of local (0, 0), side tracks only
+        Rect clip{};      // page coordinates
+        bool draw_name{false};
+        Point name_anchor{};
+        TextAlign name_align{TextAlign::right};
+        VerticalAlign name_valign{VerticalAlign::middle};
     };
     struct PanelLayout {
         Panel* panel{nullptr};

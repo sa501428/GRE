@@ -54,6 +54,7 @@ add_library(gre
     src/render/image.cpp
     src/render/canvas.cpp
     src/render/raster_canvas.cpp
+    src/render/rotated_canvas.cpp
     src/render/pdf_canvas.cpp
     src/render/svg_canvas.cpp
     src/figure/theme.cpp

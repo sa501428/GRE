@@ -226,13 +226,13 @@ void SignalTrack::draw(Canvas& canvas, const TrackRect& rect) const {
         style.align = TextAlign::right;
         style.valign = VerticalAlign::middle;
 
-        const std::vector<double> ticks = nice_ticks(scale_.min(), scale_.max(), 2);
+        const std::vector<double> ticks = scale_ticks(scale_, 3);
+        const double step = ticks.size() >= 2 ? tick_step(ticks) : scale_.max();
         for (double tick : ticks) {
             const double y = y_of(tick, content);
             if (y < content.top() - 0.5 || y > content.bottom() + 0.5) continue;
             canvas.stroke_line(Point{content.left(), y},
                                Point{content.left() - theme_ref.tick_length, y}, stroke);
-            const double step = ticks.size() >= 2 ? ticks[1] - ticks[0] : scale_.max();
             canvas.draw_text(Point{content.left() - theme_ref.tick_length - 1.5, y},
                              format_tick(tick, step), style);
         }

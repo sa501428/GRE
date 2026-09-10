@@ -37,6 +37,54 @@ public:
     }
     Track& add_track(std::unique_ptr<Track> track);
 
+    // ---- square (Juicebox-style) layout -----------------------------------
+    //
+    // Setting a matrix track switches the panel to a square arrangement:
+    //
+    //     [ x tracks, full map width      ]
+    //     [ y ][ y ][   square contact map ]
+    //
+    // Tracks added with add_track() stay horizontal above the map; tracks
+    // added with add_y_track() are quarter-turned and run down the map's left
+    // side over the y region.  In a y track, height() sets the *column width*.
+    template <typename T>
+    T& set_matrix(T track) {
+        auto owned = std::make_unique<T>(std::move(track));
+        T& reference = *owned;
+        matrix_ = std::move(owned);
+        return reference;
+    }
+    Track& set_matrix(std::unique_ptr<Track> track);
+
+    template <typename T>
+    T& add_y_track(T track) {
+        auto owned = std::make_unique<T>(std::move(track));
+        T& reference = *owned;
+        y_tracks_.push_back(std::move(owned));
+        return reference;
+    }
+    Track& add_y_track(std::unique_ptr<Track> track);
+
+    // Horizontal tracks placed *below* the map: a bottom axis, a colour bar, a
+    // legend.  In a stacked panel these simply follow the main stack.
+    template <typename T>
+    T& add_bottom_track(T track) {
+        auto owned = std::make_unique<T>(std::move(track));
+        T& reference = *owned;
+        bottom_tracks_.push_back(std::move(owned));
+        return reference;
+    }
+    Track& add_bottom_track(std::unique_ptr<Track> track);
+
+    [[nodiscard]] bool square_layout() const noexcept { return matrix_ != nullptr; }
+    [[nodiscard]] Track* matrix() noexcept { return matrix_.get(); }
+    [[nodiscard]] std::size_t y_track_count() const noexcept { return y_tracks_.size(); }
+    [[nodiscard]] Track& y_track(std::size_t index) { return *y_tracks_.at(index); }
+
+    // Strip under the map holding the y tracks' names.  Negative sizes it from
+    // the theme's font; 0 removes it.
+    Panel& set_y_label_height(double height);
+
     Panel& set_title(std::string title);
     // 0 lets the panel size itself from its tracks.
     Panel& set_height(double height);
@@ -70,7 +118,11 @@ private:
     double border_width_{0.6};
     bool has_background_{false};
     Color background_{colors::transparent};
+    double y_label_height_{-1.0};
     std::vector<std::unique_ptr<Track>> tracks_;
+    std::vector<std::unique_ptr<Track>> y_tracks_;
+    std::vector<std::unique_ptr<Track>> bottom_tracks_;
+    std::unique_ptr<Track> matrix_;
 };
 
 }  // namespace gre
