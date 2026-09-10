@@ -108,15 +108,9 @@ if(GRE_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-install(TARGETS gre EXPORT gre-targets)
+# GRE links straw and igv-cpp from their source trees, and neither is installed
+# by this project, so an installed libgre would not be self-contained.  The
+# supported integration is add_subdirectory(); install() is provided only for
+# staging the artefacts.
+install(TARGETS gre)
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(EXPORT gre-targets
-    FILE gre-targets.cmake
-    NAMESPACE gre::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/gre
-)
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/gre-config-version.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
