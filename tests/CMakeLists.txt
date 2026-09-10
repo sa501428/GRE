@@ -1,0 +1,5 @@
+add_executable(gre_tests test_gre.cpp)
+target_link_libraries(gre_tests PRIVATE gre::gre ZLIB::ZLIB)
+target_compile_features(gre_tests PRIVATE cxx_std_20)
+target_include_directories(gre_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+add_test(NAME gre_tests COMMAND gre_tests)
