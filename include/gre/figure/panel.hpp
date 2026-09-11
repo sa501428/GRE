@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <memory>
 #include <string>
 #include <utility>
@@ -29,6 +30,7 @@ public:
     // both `panel.add_track(SignalTrack{s}.height(80))` and post-hoc
     // configuration work.
     template <typename T>
+        requires std::derived_from<T, Track>
     T& add_track(T track) {
         auto owned = std::make_unique<T>(std::move(track));
         T& reference = *owned;
@@ -48,6 +50,7 @@ public:
     // added with add_y_track() are quarter-turned and run down the map's left
     // side over the y region.  In a y track, height() sets the *column width*.
     template <typename T>
+        requires std::derived_from<T, Track>
     T& set_matrix(T track) {
         auto owned = std::make_unique<T>(std::move(track));
         T& reference = *owned;
@@ -57,6 +60,7 @@ public:
     Track& set_matrix(std::unique_ptr<Track> track);
 
     template <typename T>
+        requires std::derived_from<T, Track>
     T& add_y_track(T track) {
         auto owned = std::make_unique<T>(std::move(track));
         T& reference = *owned;
@@ -68,6 +72,7 @@ public:
     // Horizontal tracks placed *below* the map: a bottom axis, a colour bar, a
     // legend.  In a stacked panel these simply follow the main stack.
     template <typename T>
+        requires std::derived_from<T, Track>
     T& add_bottom_track(T track) {
         auto owned = std::make_unique<T>(std::move(track));
         T& reference = *owned;

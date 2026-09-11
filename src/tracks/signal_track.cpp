@@ -62,6 +62,12 @@ SignalTrack& SignalTrack::log_scale(bool value) {
     return *this;
 }
 
+SignalTrack& SignalTrack::symmetric(bool value) {
+    symmetric_ = value;
+    symmetric_set_ = true;
+    return *this;
+}
+
 SignalTrack& SignalTrack::baseline(double value) {
     baseline_ = value;
     baseline_set_ = true;
@@ -94,13 +100,35 @@ void SignalTrack::prepare(const ViewContext& context) {
     if (!have_data_) return;
 
     if (scale_.auto_min() || scale_.auto_max()) {
+        const bool both_automatic = scale_.auto_min() && scale_.auto_max();
         ValueScale fitted = scale_;
         if (fitted.fit(data_.values)) {
-            // Anchoring at zero is almost always what a coverage track wants.
-            if (scale_.auto_min() && fitted.min() > 0.0 && fitted.max() > 0.0) {
-                fitted.min(0.0);
+            const bool spans_zero = fitted.min() < 0.0 && fitted.max() > 0.0;
+            // Signed data reads best centred: the baseline stays in the middle
+            // and equal excursions either way look equal.
+            if (symmetric_set_ ? symmetric_ : (both_automatic && spans_zero)) {
+                // Take the percentile of the *magnitudes*, so clipping an
+                // outlier works whichever side of the baseline it falls on.
+                std::vector<double> magnitudes;
+                magnitudes.reserve(data_.values.size());
+                for (double value : data_.values) {
+                    if (std::isfinite(value)) magnitudes.push_back(std::fabs(value));
+                }
+                ValueScale magnitude;
+                magnitude.min(0.0);  // fixes the low end, so only the top is fitted
+                magnitude.upper_percentile(scale_.upper_percentile());
+                const double extent =
+                    magnitude.fit(magnitudes)
+                        ? magnitude.max()
+                        : std::max(std::fabs(fitted.min()), std::fabs(fitted.max()));
+                fitted.limits(-extent, extent);
+            } else {
+                // Anchoring at zero is almost always what a coverage track wants.
+                if (scale_.auto_min() && fitted.min() > 0.0 && fitted.max() > 0.0) {
+                    fitted.min(0.0);
+                }
+                if (scale_.auto_max() && fitted.max() < 0.0) fitted.max(0.0);
             }
-            if (scale_.auto_max() && fitted.max() < 0.0) fitted.max(0.0);
             scale_ = fitted;
         } else {
             scale_.limits(0.0, 1.0);
@@ -150,25 +178,41 @@ void SignalTrack::draw(Canvas& canvas, const TrackRect& rect) const {
             [[fallthrough]];  // too narrow to separate: draw as a filled profile
         }
         case SignalStyle::area: {
-            // Runs of finite bins become one stepped polygon each, so gaps in
-            // the data stay gaps instead of being bridged.
+            // One stepped polygon per side of the baseline, so a signed track
+            // keeps its two colours however narrow the bins are.  Values on the
+            // other side are clamped to the baseline and contribute no area.
+            const auto emit_side = [&](std::size_t begin, std::size_t end, bool above,
+                                       Color color) {
+                std::vector<Point> polygon;
+                polygon.reserve((end - begin) * 2 + 2);
+                polygon.push_back(Point{x_left(begin), base_y});
+                for (std::size_t k = begin; k < end; ++k) {
+                    const double value = above ? std::max(data_.values[k], baseline_)
+                                               : std::min(data_.values[k], baseline_);
+                    const double y = y_of(value, content);
+                    polygon.push_back(Point{x_left(k), y});
+                    polygon.push_back(Point{x_right(k), y});
+                }
+                polygon.push_back(Point{x_right(end - 1), base_y});
+                canvas.fill_polygon(polygon, color);
+            };
+
+            // Runs of finite bins are drawn separately, so gaps in the data
+            // stay gaps instead of being bridged.
             std::size_t i = 0;
             while (i < data_.size()) {
                 while (i < data_.size() && !std::isfinite(data_.values[i])) ++i;
                 if (i >= data_.size()) break;
                 std::size_t end = i;
-                while (end < data_.size() && std::isfinite(data_.values[end])) ++end;
-
-                std::vector<Point> polygon;
-                polygon.reserve((end - i) * 2 + 2);
-                polygon.push_back(Point{x_left(i), base_y});
-                for (std::size_t k = i; k < end; ++k) {
-                    const double y = y_of(data_.values[k], content);
-                    polygon.push_back(Point{x_left(k), y});
-                    polygon.push_back(Point{x_right(k), y});
+                bool any_above = false;
+                bool any_below = false;
+                while (end < data_.size() && std::isfinite(data_.values[end])) {
+                    if (data_.values[end] > baseline_) any_above = true;
+                    if (data_.values[end] < baseline_) any_below = true;
+                    ++end;
                 }
-                polygon.push_back(Point{x_right(end - 1), base_y});
-                canvas.fill_polygon(polygon, fill);
+                if (any_above) emit_side(i, end, true, fill);
+                if (any_below) emit_side(i, end, false, negative_ink);
                 i = end;
             }
             break;

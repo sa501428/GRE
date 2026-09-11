@@ -6,7 +6,7 @@ namespace gre {
 
 Theme Theme::light() {
     Theme theme;
-    theme.heatmap_colors = ColorMap::named("fall");
+    theme.heatmap_colors = ColorMap::named("juicebox");
     return theme;
 }
 
@@ -38,7 +38,7 @@ Theme Theme::publication() {
     theme.panel_spacing = 10.0;
     theme.label_width = 62.0;
     theme.muted = rgb(90, 90, 90);
-    theme.heatmap_colors = ColorMap::named("fall");
+    theme.heatmap_colors = ColorMap::named("juicebox");
     return theme;
 }
 

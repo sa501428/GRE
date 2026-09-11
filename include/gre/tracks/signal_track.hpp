@@ -36,6 +36,10 @@ public:
     SignalTrack& scale(ValueScale value);
     SignalTrack& limits(double low, double high);
     SignalTrack& log_scale(bool value);
+    // Mirror the automatic limits about the baseline, so a signed track --
+    // a compartment eigenvector, say -- is centred and the two colours carry
+    // equal weight.  Left unset, it turns itself on when the data spans zero.
+    SignalTrack& symmetric(bool value);
     // Where the area and bar styles are anchored.  Defaults to 0, or to the
     // scale minimum when that is above 0.
     SignalTrack& baseline(double value);
@@ -70,6 +74,8 @@ private:
     Color negative_color_{colors::transparent};
     double line_width_{0.8};
     ValueScale scale_;
+    bool symmetric_{false};
+    bool symmetric_set_{false};
     bool baseline_set_{false};
     double baseline_{0.0};
     bool show_range_label_{true};

@@ -70,6 +70,7 @@ private:
         Rect clip{};      // page coordinates
         bool draw_name{false};
         Point name_anchor{};
+        double name_budget{0.0};  // width available for the name
         TextAlign name_align{TextAlign::right};
         VerticalAlign name_valign{VerticalAlign::middle};
     };

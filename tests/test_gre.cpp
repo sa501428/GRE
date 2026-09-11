@@ -543,6 +543,53 @@ void test_matrix_source() {
     CHECK_NEAR(coarse.at(0, 0), 2.5, 1e-5);  // mean of 0, 1, 4, 5
 }
 
+void test_symmetric_scale() {
+    const Theme theme = Theme::light();
+    ViewContext context;
+    context.x_region = GenomicRegion{"chr1", 0, 200};
+    context.content = Rect{0.0, 0.0, 100.0, 40.0};
+    context.theme = &theme;
+
+    // Data that spans zero centres itself, so equal excursions look equal.
+    SignalTrack signed_track{
+        MemorySignalSource::make("chr1", {{0, 100, -3.0}, {100, 200, 6.0}})};
+    signed_track.prepare(context);
+    CHECK_NEAR(signed_track.value_scale().min(), -6.0, 1e-9);
+    CHECK_NEAR(signed_track.value_scale().max(), 6.0, 1e-9);
+
+    // Turning it off falls back to the fitted range.
+    SignalTrack asymmetric{
+        MemorySignalSource::make("chr1", {{0, 100, -3.0}, {100, 200, 6.0}})};
+    asymmetric.symmetric(false);
+    asymmetric.prepare(context);
+    CHECK_NEAR(asymmetric.value_scale().min(), -3.0, 1e-9);
+    CHECK_NEAR(asymmetric.value_scale().max(), 6.0, 1e-9);
+
+    // All-positive data still anchors at zero rather than centring.
+    SignalTrack positive{
+        MemorySignalSource::make("chr1", {{0, 100, 3.0}, {100, 200, 6.0}})};
+    positive.prepare(context);
+    CHECK_NEAR(positive.value_scale().min(), 0.0, 1e-9);
+    CHECK_NEAR(positive.value_scale().max(), 6.0, 1e-9);
+
+    // A percentile clips a signed outlier whichever side it is on: the
+    // percentile applies to the magnitudes, not to the raw values.
+    std::vector<MemorySignalSource::Interval> spiky;
+    for (int i = 0; i < 100; ++i) {
+        spiky.push_back({i * 100, (i + 1) * 100, (i % 2 == 0) ? 1.0 : -1.0});
+    }
+    spiky.push_back({100 * 100, 101 * 100, -500.0});
+    SignalTrack clipped{MemorySignalSource::make("chr1", spiky)};
+    ValueScale scale;
+    scale.upper_percentile(0.9);
+    clipped.scale(scale);
+    ViewContext wide = context;
+    wide.x_region = GenomicRegion{"chr1", 0, 10100};
+    clipped.prepare(wide);
+    CHECK(clipped.value_scale().max() < 100.0);
+    CHECK_NEAR(clipped.value_scale().min(), -clipped.value_scale().max(), 1e-9);
+}
+
 void test_gene_packing() {
     std::vector<Feature> features;
     for (int i = 0; i < 3; ++i) {
@@ -712,6 +759,7 @@ int main() {
     test_layout();
     test_signal_source();
     test_matrix_source();
+    test_symmetric_scale();
     test_gene_packing();
     test_full_render();
     test_font_subset();

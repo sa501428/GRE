@@ -22,6 +22,27 @@ Rect clip_for(const Rect& rect) {
     return Rect{rect.left() - 2.0, rect.top() - 24.0, rect.width + 4.0, rect.height + 48.0};
 }
 
+// Track names come from file names often enough that they have to be allowed
+// to be too long.  Trim from the front, so the distinguishing tail survives.
+std::string elide(const Font& font, const std::string& text, double size, double budget) {
+    if (budget <= 0.0 || font.width(text, size) <= budget) return text;
+    const std::string ellipsis = "\xE2\x80\xA6";  // U+2026
+    const double ellipsis_width = font.width(ellipsis, size);
+    if (ellipsis_width > budget) return {};
+    // Walk in from the front until the tail fits, respecting UTF-8 boundaries.
+    std::size_t start = 0;
+    while (start < text.size()) {
+        ++start;
+        while (start < text.size() &&
+               (static_cast<unsigned char>(text[start]) & 0xC0) == 0x80) {
+            ++start;
+        }
+        const std::string tail = text.substr(start);
+        if (ellipsis_width + font.width(tail, size) <= budget) return ellipsis + tail;
+    }
+    return ellipsis;
+}
+
 }  // namespace
 
 Figure::Figure() : theme_(Theme::light()) {}
@@ -363,6 +384,7 @@ Figure::Layout Figure::build_layout(double device_scale) {
                 entry.draw_name = gutter && track.show_name() && !track.name().empty();
                 entry.name_anchor =
                     Point{entry.rect.label.left() - kNameGap, entry.rect.full.center_y()};
+                entry.name_budget = entry.name_anchor.x - (left + panel.padding_.left);
                 placed.tracks.push_back(entry);
 
                 if (!placed_anything) content_top = y;
@@ -394,6 +416,8 @@ Figure::Layout Figure::build_layout(double device_scale) {
                 panel.matrix_->show_name() && !panel.matrix_->name().empty();
             // The map's own name goes in the gutter, left of the side columns.
             matrix_entry.name_anchor = Point{state.plot_left - kNameGap, map.center_y()};
+            matrix_entry.name_budget =
+                matrix_entry.name_anchor.x - (left + panel.padding_.left);
             placed.tracks.push_back(matrix_entry);
 
             // Side columns, first added furthest from the map -- the mirror of
@@ -424,6 +448,7 @@ Figure::Layout Figure::build_layout(double device_scale) {
                     Point{(column_left + column_right) / 2.0, map.bottom() + 2.0};
                 entry.name_align = TextAlign::center;
                 entry.name_valign = VerticalAlign::top;
+                entry.name_budget = state.y_widths[i] + state.spacing;
                 placed.tracks.push_back(entry);
 
                 column_x += side_margins.vertical() + state.y_widths[i] + state.spacing;
@@ -518,7 +543,10 @@ void Figure::draw_layout(Canvas& canvas, const Layout& layout) const {
                 style.color = theme_.foreground;
                 style.align = entry.name_align;
                 style.valign = entry.name_valign;
-                canvas.draw_text(entry.name_anchor, track.name(), style);
+                canvas.draw_text(entry.name_anchor,
+                                 elide(fonts().get(theme_.font), track.name(), style.size,
+                                       entry.name_budget),
+                                 style);
             }
 
             if (entry.side) {

@@ -7,7 +7,7 @@ include(CTest)
 include(CMakePackageConfigHelpers)
 
 option(GRE_BUILD_TESTS "Build GRE tests" ${BUILD_TESTING})
-option(GRE_BUILD_EXAMPLES "Build GRE examples" ON)
+option(GRE_BUILD_TOOLS "Build the gre_plot command-line tool" ON)
 
 set(GRE_STRAW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../straw/C++"
     CACHE PATH "Path to the straw C++ sources (Hi-C matrix access)")
@@ -105,8 +105,8 @@ if(GRE_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-if(GRE_BUILD_EXAMPLES)
-    add_subdirectory(examples)
+if(GRE_BUILD_TOOLS)
+    add_subdirectory(tools)
 endif()
 
 # GRE links straw and igv-cpp from their source trees, and neither is installed
