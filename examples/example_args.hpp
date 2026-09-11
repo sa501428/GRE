@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -143,8 +144,10 @@ inline void describe(const gre::StrawMatrixSource& source) {
     std::printf("\n");
 }
 
-// A window in the middle of the first contig, wide enough that the finest
-// stored resolution gives a few hundred bins.
+// A window a quarter of the way along the first contig, wide enough that the
+// finest stored resolution gives a few hundred bins.  Quarter rather than half
+// because the middle of a metacentric chromosome is the centromere, where
+// there are no contacts to show.
 inline gre::GenomicRegion default_region(const gre::StrawMatrixSource& source) {
     if (source.contigs().empty()) {
         throw gre::Error(gre::ErrorCode::not_found, "the .hic file lists no contigs");
@@ -153,8 +156,24 @@ inline gre::GenomicRegion default_region(const gre::StrawMatrixSource& source) {
     const std::int64_t finest = source.resolutions().front();
     const std::int64_t span =
         std::min<std::int64_t>(contig.length, std::max<std::int64_t>(finest * 400, 1));
-    const std::int64_t start = std::max<std::int64_t>(0, contig.length / 2 - span / 2);
+    const std::int64_t start = std::max<std::int64_t>(0, contig.length / 4 - span / 2);
     return gre::GenomicRegion{contig.name, start, std::min(start + span, contig.length)};
+}
+
+// Says how much data the window actually holds, so a blank map is never a
+// mystery.
+inline void report_matrix(const gre::HeatmapTrack& heatmap) {
+    const gre::MatrixData& data = heatmap.data();
+    std::size_t populated = 0;
+    for (float value : data.values) {
+        if (std::isfinite(value) && value != 0.0F) ++populated;
+    }
+    std::printf("matrix: %zu x %zu bins at %lld bp, %zu non-empty\n", data.width, data.height,
+                static_cast<long long>(data.bin_size), populated);
+    if (populated == 0) {
+        std::fprintf(stderr,
+                     "warning: no contacts in this region, so the map is blank\n");
+    }
 }
 
 }  // namespace example

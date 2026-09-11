@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
 
         const Size size = figure.computed_size();
         std::printf("resolution used: %d bp\n", matrix->last_resolution());
+        example::report_matrix(map);
         std::printf("wrote %s.{png,pdf}  (%.0f x %.0f pt)\n", arguments.output.c_str(),
                     size.width, size.height);
     } catch (const std::exception& error) {

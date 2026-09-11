@@ -58,10 +58,17 @@ bool fit_from(std::vector<double>&& finite, ValueScale& scale, bool auto_min, bo
     if (auto_min) lo = percentile_of(finite, lower_p);
     if (auto_max) hi = percentile_of(finite, upper_p);
     if (!(hi > lo)) {
-        // A constant field still has to produce a usable range.
+        // A constant field still has to produce a usable range.  Expanding
+        // upwards keeps the data at the bottom of the scale, so a region with
+        // no contacts reads as empty instead of as a mid-colour wash.
         const double magnitude = std::max(std::fabs(hi), 1.0);
-        lo = hi - magnitude * 0.5;
-        hi = hi + magnitude * 0.5;
+        if (auto_max) {
+            hi = lo + magnitude;
+        } else if (auto_min) {
+            lo = hi - magnitude;
+        } else {
+            hi = lo + magnitude;
+        }
     }
     if (auto_min) scale.min(lo);
     if (auto_max) scale.max(hi);

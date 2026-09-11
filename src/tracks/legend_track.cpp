@@ -159,10 +159,14 @@ void ColorBarTrack::draw(Canvas& canvas, const TrackRect& rect) const {
         if (has_border_) canvas.stroke_rect(bar, stroke);
 
         text.valign = VerticalAlign::top;
-        text.align = TextAlign::center;
         for (double tick : ticks) {
             const double unit = scale_.normalize(tick);
             if (!std::isfinite(unit)) continue;
+            // Pull the end labels inside the bar rather than letting them
+            // overhang the plotting area.
+            text.align = unit <= 0.001   ? TextAlign::left
+                         : unit >= 0.999 ? TextAlign::right
+                                         : TextAlign::center;
             canvas.draw_text(Point{bar.left() + unit * bar.width, bar.bottom() + kLabelGap},
                              format_tick(tick, step), text);
         }
@@ -173,11 +177,13 @@ void ColorBarTrack::draw(Canvas& canvas, const TrackRect& rect) const {
         canvas.draw_image(bar, gradient_.view(ImageScaling::bilinear));
         if (has_border_) canvas.stroke_rect(bar, stroke);
 
-        text.valign = VerticalAlign::middle;
         text.align = TextAlign::left;
         for (double tick : ticks) {
             const double unit = scale_.normalize(tick);
             if (!std::isfinite(unit)) continue;
+            text.valign = unit <= 0.001   ? VerticalAlign::bottom
+                          : unit >= 0.999 ? VerticalAlign::top
+                                          : VerticalAlign::middle;
             canvas.draw_text(Point{bar.right() + kLabelGap, bar.bottom() - unit * bar.height},
                              format_tick(tick, step), text);
         }

@@ -101,7 +101,16 @@ void AxisTrack::draw(Canvas& canvas, const TrackRect& rect) const {
         const std::string text = format_position(tick, step_);
         const double half = canvas.measure_text(text, label).width / 2.0;
         if (x + half > region_left) continue;
-        canvas.draw_text(Point{x, above ? tick_end - 1.0 : tick_end + 1.0}, text, label);
+
+        // A tick sitting on the left edge would otherwise hang its label off
+        // the plotting area and have it clipped away.
+        TextStyle placed = label;
+        double label_x = x;
+        if (x - half < rect.content.left()) {
+            placed.align = TextAlign::left;
+            label_x = rect.content.left();
+        }
+        canvas.draw_text(Point{label_x, above ? tick_end - 1.0 : tick_end + 1.0}, text, placed);
     }
 
     if (show_region_) {
