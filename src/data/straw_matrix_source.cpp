@@ -194,8 +194,18 @@ MatrixData StrawMatrixSource::query(const MatrixRegion& region, std::size_t targ
         counts.assign(width * height, 0.0);
     }
 
-    const auto location = [](const std::string& chrom, std::int64_t start, std::int64_t end) {
-        return chrom + ":" + std::to_string(start) + ":" + std::to_string(end);
+    // The grid is aligned outwards to whole bins, which can reach past the end
+    // of the chromosome.  The output keeps those bins (they simply stay empty),
+    // but the query itself has to stay inside the contig or straw rejects it.
+    const std::int64_t x_limit = contig_length(chrom_x);
+    const std::int64_t y_limit = contig_length(chrom_y);
+    const auto location = [](const std::string& chrom, std::int64_t start, std::int64_t end,
+                             std::int64_t limit) {
+        const std::int64_t first = std::max<std::int64_t>(start, 0);
+        std::int64_t last = end;
+        if (limit > 0) last = std::min(last, limit - 1);
+        last = std::max(last, first);
+        return chrom + ":" + std::to_string(first) + ":" + std::to_string(last);
     };
     const bool intra = chrom_x == chrom_y;
 
@@ -216,7 +226,8 @@ MatrixData StrawMatrixSource::query(const MatrixRegion& region, std::size_t targ
 
     try {
         strawStream(impl_->options.matrix_type, impl_->options.normalization, impl_->path,
-                    location(chrom_x, x_start, x_end - 1), location(chrom_y, y_start, y_end - 1),
+                    location(chrom_x, x_start, x_end - 1, x_limit),
+                    location(chrom_y, y_start, y_end - 1, y_limit),
                     impl_->options.unit, resolution, [&](const contactRecord& record) {
                         if (!std::isfinite(record.counts)) return;
                         // straw reports genomic coordinates, not bin indices.
