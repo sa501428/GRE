@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "gre/core/error.hpp"
+#include "igv/igv.hpp"
 
 namespace gre {
 namespace {
@@ -45,6 +46,12 @@ PairFeature parse_record(const std::vector<std::string>& fields, std::size_t lin
         feature.second = GenomicRegion{fields[3], std::stoll(fields[4]), std::stoll(fields[5])};
         if (fields.size() > 6 && fields[6] != ".") feature.name = fields[6];
         if (fields.size() > 7 && fields[7] != ".") feature.score = std::stod(fields[7]);
+        // Juicer/ENCODE BEDPE records leave the canonical score column empty,
+        // put itemRgb in column 11, and place observed/domain score in column
+        // 12. Use that quantitative field when the canonical score is absent.
+        if (!feature.score.has_value() && fields.size() > 11 && fields[11] != ".") {
+            feature.score = std::stod(fields[11]);
+        }
     } catch (const std::exception&) {
         throw Error(ErrorCode::invalid_argument,
                     path + ":" + std::to_string(line_number) +
@@ -100,10 +107,29 @@ bool gzip_path(const std::string& path) {
     return path.size() >= 3 && path.compare(path.size() - 3, 3, ".gz") == 0;
 }
 
+bool remote_path(const std::string& path) {
+    return path.starts_with("http://") || path.starts_with("https://");
+}
+
 }  // namespace
 
 BedpeSource::BedpeSource(std::string path) : path_(std::move(path)) {
-    if (gzip_path(path_)) {
+    if (remote_path(path_)) {
+        try {
+            igv::Resource resource;
+            resource.uri = path_;
+            const auto reader = igv::open_bedpe(resource);
+            const igv::RecordBatch<igv::Interaction> batch = reader->read_all();
+            features_.reserve(batch.records.size());
+            for (std::size_t i = 0; i < batch.records.size(); ++i) {
+                features_.push_back(
+                    parse_record(fields_of(batch.records[i].raw_record), i + 1, path_));
+            }
+        } catch (const igv::Error& error) {
+            throw Error(ErrorCode::io,
+                        "cannot open remote BEDPE file '" + path_ + "': " + error.what());
+        }
+    } else if (gzip_path(path_)) {
         gzFile file = gzopen(path_.c_str(), "rb");
         if (file == nullptr) throw Error(ErrorCode::io, "cannot open BEDPE file '" + path_ + "'");
         constexpr int kChunk = 8192;

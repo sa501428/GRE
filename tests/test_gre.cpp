@@ -578,19 +578,24 @@ void test_pair_sources_and_overlays() {
         std::ofstream out(bedpe_path);
         out << "# test\n";
         out << "chr1\t100\t150\tchr1\t700\t750\tloop-a\t42\n";
+        out << "chr1\t200\t250\tchr1\t800\t850\tloop-b\t.\t.\t.\t0,255,255\t118\n";
         out << "chr2\t100\t150\tchr2\t700\t750\tother\t1\n";
     }
     auto source = BedpeSource::open(bedpe_path.string());
     const auto pairs = source->query(GenomicRegion{"chr1", 0, 1000},
                                      GenomicRegion{"chr1", 0, 1000});
-    CHECK(pairs.size() == 1);
+    CHECK(pairs.size() == 2);
     CHECK(pairs[0].name == "loop-a");
     CHECK(pairs[0].score.has_value());
     CHECK_NEAR(*pairs[0].score, 42.0, 1e-9);
+    CHECK(pairs[1].name == "loop-b");
+    CHECK(pairs[1].score.has_value());
+    CHECK_NEAR(*pairs[1].score, 118.0, 1e-9);
+    CHECK(pairs[1].color == rgb(0, 255, 255));
 
     PairAnnotationLayer prepared{source};
     prepared.prepare(GenomicRegion{"chr1", 0, 1000}, GenomicRegion{"chr1", 0, 1000});
-    CHECK(prepared.features().size() == 1);
+    CHECK(prepared.features().size() == 2);
 
     std::vector<float> values(100, 0.0F);
     auto matrix = MemoryMatrixSource::make(

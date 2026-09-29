@@ -30,9 +30,10 @@ public:
 
 using PairFeatureSourcePtr = std::shared_ptr<PairFeatureSource>;
 
-// A BEDPE reader. Plain text and gzip-compressed files are supported. The
-// first six BEDPE columns are required; name and score are read when present.
-// Records are kept in memory because loop/domain files are normally sparse.
+// A BEDPE reader. Local paths and public HTTP(S) URLs may point to plain text
+// or gzip-compressed files. The first six BEDPE columns are required; name and
+// score are read when present. Records are kept in memory because loop/domain
+// files are normally sparse.
 class BedpeSource : public PairFeatureSource {
 public:
     explicit BedpeSource(std::string path);

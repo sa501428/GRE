@@ -45,6 +45,35 @@ fig.save_pdf("figure.pdf");
 - **Axes, colour bars, legends, grids, themes**, multiple panels.
 - **PNG, PDF and SVG** from one figure definition, at any resolution.
 
+## ENCODE example gallery
+
+The gallery below is rendered from public ENCODE URLs. GRE range-queries the
+20.7 GB `.hic` and indexed bigWig/bigBed inputs in place; it does not download
+those files in full. Each figure's exact command, input accession table, direct
+URLs, interpretation, and regeneration instructions are in the
+[complete gallery](examples/gallery/README.md). Run all five with
+`./examples/gallery/generate.sh`.
+
+### Pyramid with 1D tracks, domains, and score-styled loops
+
+![K562 pyramid with ENCODE compartment, H3K27ac, promoter, domain, and loop annotations](examples/gallery/generated/01_pyramid_tracks.png)
+
+### Square map with both-axis PC1, virtual 4C, and rich 2D overlays
+
+![K562 square map with both-axis PC1, virtual 4C, domains, loops, and viewpoint highlight](examples/gallery/generated/02_square_rich_annotations.png)
+
+### VS mode: observed above and observed/expected below
+
+![K562 split map with observed contacts and observed over expected](examples/gallery/generated/03_vs_observed_expected.png)
+
+### Three loci on a jointly fitted contact scale
+
+![K562 multi-panel figure with shared map scale](examples/gallery/generated/04_multi_panel_shared_scale.png)
+
+### Dark off-diagonal rectangular block
+
+![K562 dark off-diagonal contact block with loop boxes and highlights](examples/gallery/generated/05_off_diagonal_rectangle.png)
+
 ## Square (Juicebox-style) layout
 
 Setting a matrix track switches a panel to a square arrangement with tracks on
@@ -148,7 +177,7 @@ not be self-contained, because GRE does not install straw or igv-cpp.
 
 ## gre_plot
 
-`gre_plot` composes a figure from a `.hic` file, any number of 1D tracks,
+`gre_plot` composes a figure from a local or HTTP(S) `.hic` file, any number of 1D tracks,
 matrix-derived virtual 4C profiles, BEDPE overlays, and multiple vertically
 stacked genomic panels.
 Options that follow a track file apply to that track; everything else is
@@ -491,6 +520,11 @@ tracks, BED/GFF/GTF/genePred/bigBed gene tracks, narrowPeak/broadPeak interval
 tracks, and `.bedpe`/`.bedpe.gz` files become 2D map overlays. `--type`
 overrides the guess.
 
+Public HTTP(S) URLs can be used anywhere a path is accepted. `.hic`, bigWig,
+bigBed, and other indexed binary formats require a server that honors byte
+range requests; text/gzip BEDPE, BED, GFF/GTF, bedGraph, and wig inputs are
+streamed through their readers. Quote URLs in shell commands.
+
 ### Figure options
 
 | flag | meaning | default |
@@ -585,9 +619,10 @@ Each applies to the track file it follows.
 
 ### BEDPE input contract
 
-GRE accepts plain `.bedpe` and gzip-compressed `.bedpe.gz`. Coordinates are
-zero-based and half-open, matching BED. Blank lines, comments beginning with
-`#`, and UCSC `track`/`browser` lines are ignored.
+GRE accepts local paths or public HTTP(S) URLs for plain `.bedpe` and
+gzip-compressed `.bedpe.gz`. Coordinates are zero-based and half-open, matching
+BED. Blank lines, comments beginning with `#`, and UCSC `track`/`browser` lines
+are ignored.
 
 | column | field | use in GRE |
 |---:|---|---|
@@ -597,6 +632,10 @@ zero-based and half-open, matching BED. Blank lines, comments beginning with
 | 8 | score | optional filter, colour, opacity, width, and marker-size mapping |
 | 9–10 | strands | accepted but not currently rendered |
 | later optional field | `R,G,B` or hex colour | per-record stroke colour when recognizable |
+
+Juicer-style ENCODE BEDPE files commonly leave column 8 empty, put itemRgb in
+column 11, and put observed/domain score in column 12. GRE uses that column-12
+value as the score fallback when column 8 is missing.
 
 For example:
 
@@ -1049,9 +1088,9 @@ and searches correctly.
 - Split/VS comparison is intentionally limited to a square with identical x
   and y regions. It displays two sources; it does not calculate a difference,
   ratio, or statistical comparison.
-- BEDPE files are read into memory and filtered per view. This is appropriate
-  for sparse loop/domain call sets but is not an indexed solution for files
-  containing tens of millions of pairs.
+- BEDPE files and URLs are read into memory and filtered per view. This is
+  appropriate for sparse loop/domain call sets but is not an indexed solution
+  for files containing tens of millions of pairs.
 - BEDPE score drives filtering, colour, opacity, line width, and marker size.
   Strand columns are accepted but strand-aware glyphs are not implemented yet.
 - The CLI multi-panel layout is one vertical stack with global map settings.

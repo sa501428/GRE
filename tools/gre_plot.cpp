@@ -209,7 +209,9 @@ TrackKind kind_from_extension(const std::string& path) {
         return TrackKind::signal;
     }
     if (ends_with(name, ".bed") || ends_with(name, ".bed.gz") || ends_with(name, ".gff") ||
-        ends_with(name, ".gff3") || ends_with(name, ".gtf") || ends_with(name, ".bb") ||
+        ends_with(name, ".gff.gz") || ends_with(name, ".gff3") ||
+        ends_with(name, ".gff3.gz") || ends_with(name, ".gtf") ||
+        ends_with(name, ".gtf.gz") || ends_with(name, ".bb") ||
         ends_with(name, ".bigbed") || ends_with(name, ".genepred")) {
         return TrackKind::gene;
     }
