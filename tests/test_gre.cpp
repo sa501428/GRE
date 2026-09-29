@@ -632,6 +632,45 @@ void test_pair_sources_and_overlays() {
     CHECK(svg.find("stroke-dasharray") != std::string::npos);
     CHECK(svg.find("loop-a") == std::string::npos);  // labels default off
 
+    // A loop glyph stays circular in device space even when its two anchors
+    // have very different genomic spans.  Previously this rendered as a wide
+    // ellipse because the x and y anchor boxes were scaled independently.
+    PairFeature unequal_loop;
+    unequal_loop.first = GenomicRegion{"chr1", 100, 110};
+    unequal_loop.second = GenomicRegion{"chr1", 650, 850};
+    Figure loop_figure;
+    loop_figure.set_width(104.0).set_margins(Insets{0.0});
+    Panel& loop_panel = loop_figure.add_panel();
+    loop_panel.set_region("chr1", 0, 1000).set_label_width(0.0);
+    HeatmapTrack loop_map{matrix};
+    loop_map.colors(ColorMap::from_stops({colors::white, colors::white}))
+        .limits(0.0, 1.0)
+        .margins(Insets{0.0})
+        .show_name(false)
+        .add_annotation(PairAnnotationLayer{MemoryPairFeatureSource::make({unequal_loop})}
+                            .style(PairAnnotationStyle::loop)
+                            .side(AnnotationSide::above)
+                            .color(colors::red));
+    loop_panel.set_matrix(std::move(loop_map));
+    const Image loop_image = loop_figure.render_image(72.0);
+    int red_left = loop_image.width();
+    int red_right = -1;
+    int red_top = loop_image.height();
+    int red_bottom = -1;
+    for (int y = 0; y < loop_image.height(); ++y) {
+        for (int x = 0; x < loop_image.width(); ++x) {
+            const Color pixel = loop_image.get(x, y);
+            if (pixel.r > 200 && pixel.g < 80 && pixel.b < 80) {
+                red_left = std::min(red_left, x);
+                red_right = std::max(red_right, x);
+                red_top = std::min(red_top, y);
+                red_bottom = std::max(red_bottom, y);
+            }
+        }
+    }
+    CHECK(red_right >= red_left && red_bottom >= red_top);
+    CHECK(std::abs((red_right - red_left) - (red_bottom - red_top)) <= 1);
+
     std::filesystem::remove(bedpe_path);
     std::filesystem::remove(svg_path);
 }

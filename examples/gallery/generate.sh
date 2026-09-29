@@ -16,7 +16,7 @@ H3K27AC_PEAKS='https://www.encodeproject.org/files/ENCFF045OHM/@@download/ENCFF0
 PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MUK.gtf.gz'
 
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout pyramid --norm NONE --resolution 25000 --max-distance 1200000 \
+  --layout pyramid --norm SCALE --resolution 25000 --max-distance 1200000 \
   --width 7 --dpi 150 --formats png --theme publication \
   --title 'K562 — MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 28 --style area \
@@ -32,7 +32,7 @@ PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MU
   --out "$OUT_DIR/01_pyramid_tracks"
 
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout square --norm NONE --resolution 25000 --map-percentile 0.995 \
+  --layout square --norm SCALE --resolution 25000 --map-percentile 0.995 \
   --width 7 --dpi 150 --formats png --theme publication \
   --title 'K562 — square map with 1D and 2D annotation' \
   "$COMPARTMENTS" --name 'PC1' --axis both --height 28 \
@@ -49,7 +49,7 @@ PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MU
   --out "$OUT_DIR/02_square_rich_annotations"
 
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout square --norm NONE --resolution 25000 \
+  --layout square --norm SCALE --resolution 25000 \
   --map-colors reds --map-percentile 0.995 \
   --vs "$HIC" --vs-oe --vs-side below --vs-map-colors rd_bu \
     --vs-map-min 0.25 --vs-map-max 4 \
@@ -60,27 +60,27 @@ PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MU
   --diagonal --out "$OUT_DIR/03_vs_observed_expected"
 
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout pyramid --norm NONE --resolution 25000 --max-distance 1000000 \
+  --layout square --norm SCALE --resolution 25000 \
   --shared-map-scale --panel-spacing 16 \
   --width 7 --dpi 150 --formats png --theme publication \
-  --title 'K562 — three loci on one shared contact scale' \
+  --title 'K562 — three square maps on one shared contact scale' \
   --panel-title 'MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
     --color '#B2182B' --neg-color '#2166AC' \
-  "$LOOPS" --style loop --side above --color '#303030' --line-width 0.8 \
+  "$LOOPS" --style loop --side both --color '#303030' --line-width 0.8 \
   --panel chr10:15500000-18300000 --panel-title 'chr10 loop-rich locus A' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
     --color '#B2182B' --neg-color '#2166AC' \
-  "$LOOPS" --style loop --side above --color '#303030' --line-width 0.8 \
+  "$LOOPS" --style loop --side both --color '#303030' --line-width 0.8 \
   --panel chr10:50500000-52500000 --panel-title 'chr10 loop-rich locus B' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
     --color '#B2182B' --neg-color '#2166AC' \
-  "$LOOPS" --style loop --side above --color '#303030' --line-width 0.8 \
+  "$LOOPS" --style loop --side both --color '#303030' --line-width 0.8 \
   --out "$OUT_DIR/04_multi_panel_shared_scale"
 
 "$GRE_PLOT" "$HIC" chr8:126500000-128300000 \
   --layout rectangle --region-y chr8:128000000-130000000 \
-  --norm NONE --resolution 10000 --map-height 260 --map-linear \
+  --norm SCALE --resolution 10000 --map-height 260 --map-linear \
   --map-colors magma --map-percentile 0.995 \
   --width 7 --dpi 150 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \

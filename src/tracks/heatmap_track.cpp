@@ -85,6 +85,11 @@ std::vector<Point> ellipse_points(const Rect& rect) {
     return points;
 }
 
+Rect square_around(double x, double y, double diameter) {
+    diameter = std::max(4.0, diameter);
+    return Rect{x - diameter / 2.0, y - diameter / 2.0, diameter, diameter};
+}
+
 void paint_shape(Canvas& canvas, const std::vector<Point>& points, Color fill,
                  const StrokeStyle& stroke, bool closed = true) {
     if (!fill.transparent() && points.size() >= 3) canvas.fill_polygon(points, fill);
@@ -656,11 +661,12 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
                 } else {
                     const double width = feature_size * std::max(
                         4.0, std::fabs(rect.x.width_of(first.span() + second.span()) / 2.0));
-                    const double height = std::max(4.0, width * 0.65);
-                    label_box = Rect{x - width / 2.0, y - height / 2.0, width, height};
                     if (layer.style() == PairAnnotationStyle::loop) {
+                        label_box = square_around(x, y, width);
                         paint_shape(canvas, ellipse_points(label_box), feature_fill, stroke);
                     } else {
+                        const double height = std::max(4.0, width * 0.65);
+                        label_box = Rect{x - width / 2.0, y - height / 2.0, width, height};
                         if (!feature_fill.transparent()) canvas.fill_rect(label_box, feature_fill);
                         canvas.stroke_rect(label_box, stroke);
                     }
@@ -703,7 +709,15 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
                                                           static_cast<std::int64_t>(end)});
                 } else {
                     label_box = visible_box(rect.x, rect.y, xr, yr);
-                    if (feature_size != 1.0) {
+                    if (layer.style() == PairAnnotationStyle::loop) {
+                        // Loop anchors are commonly different widths on x and y.  Use one
+                        // device-space diameter so the glyph remains circular regardless
+                        // of anchor span or rectangular map dimensions.
+                        const double diameter = feature_size * std::max(
+                            4.0, std::sqrt(label_box.width * label_box.height));
+                        label_box = square_around(label_box.center_x(), label_box.center_y(),
+                                                  diameter);
+                    } else if (feature_size != 1.0) {
                         const double width = label_box.width * feature_size;
                         const double height = label_box.height * feature_size;
                         label_box = Rect{label_box.center_x() - width / 2.0,

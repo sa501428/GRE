@@ -66,9 +66,9 @@ URLs, interpretation, and regeneration instructions are in the
 
 ![K562 split map with observed contacts and observed over expected](examples/gallery/generated/03_vs_observed_expected.png)
 
-### Three loci on a jointly fitted contact scale
+### Three square panels on a jointly fitted contact scale
 
-![K562 multi-panel figure with shared map scale](examples/gallery/generated/04_multi_panel_shared_scale.png)
+![K562 vertically stacked square maps with a shared map scale](examples/gallery/generated/04_multi_panel_shared_scale.png)
 
 ### Dark off-diagonal rectangular block
 
@@ -652,8 +652,10 @@ drawn.
 
 The three styles have distinct geometry:
 
-- `loop` draws an ellipse around the 2D anchor intersection. Very narrow
-  anchors receive a minimum visible size.
+- `loop` draws a true device-space circle around the 2D anchor intersection.
+  Its diameter is derived from both anchor spans, but remains circular when
+  the anchors have different widths or the map itself is rectangular. Very
+  narrow anchors receive a minimum visible size.
 - `box` draws the rectangular product of the two anchor intervals.
 - `domain` draws a triangle bounded by the diagonal in square and pyramid
   views. In a non-diagonal rectangle it falls back to a box because there is no

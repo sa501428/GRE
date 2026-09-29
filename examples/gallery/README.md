@@ -65,7 +65,7 @@ and marker size.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout pyramid --norm NONE --resolution 25000 --max-distance 1200000 \
+  --layout pyramid --norm SCALE --resolution 25000 --max-distance 1200000 \
   --width 7 --dpi 150 --formats png --theme publication \
   --title 'K562 — MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 28 --style area \
@@ -92,7 +92,7 @@ triangle; score-styled loops are mirrored into both triangles.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout square --norm NONE --resolution 25000 --map-percentile 0.995 \
+  --layout square --norm SCALE --resolution 25000 --map-percentile 0.995 \
   --width 7 --dpi 150 --formats png --theme publication \
   --title 'K562 — square map with 1D and 2D annotation' \
   "$COMPARTMENTS" --name 'PC1' --axis both --height 28 \
@@ -120,7 +120,7 @@ legend. The BEDPE loop layer is drawn in both halves.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout square --norm NONE --resolution 25000 \
+  --layout square --norm SCALE --resolution 25000 \
   --map-colors reds --map-percentile 0.995 \
   --vs "$HIC" --vs-oe --vs-side below --vs-map-colors rd_bu \
     --vs-map-min 0.25 --vs-map-max 4 \
@@ -133,9 +133,10 @@ legend. The BEDPE loop layer is drawn in both halves.
 
 ![Split square map with observed contacts above and observed over expected below](generated/03_vs_observed_expected.png)
 
-## 4. Three panels with one fitted contact scale
+## 4. Three square panels with one fitted contact scale
 
-The panels show different chromosomes and spans. `--shared-map-scale` pools
+The vertically stacked square panels show different chromosomes and spans.
+`--shared-map-scale` pools
 their displayed finite contact values before fitting, so all three colour bars
 resolve to the same limits and the same red means the same contact count.
 Tracks and loops are repeated after each `--panel` because annotations are
@@ -143,26 +144,26 @@ panel-scoped.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout pyramid --norm NONE --resolution 25000 --max-distance 1000000 \
+  --layout square --norm SCALE --resolution 25000 \
   --shared-map-scale --panel-spacing 16 \
   --width 7 --dpi 150 --formats png --theme publication \
-  --title 'K562 — three loci on one shared contact scale' \
+  --title 'K562 — three square maps on one shared contact scale' \
   --panel-title 'MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
     --color '#B2182B' --neg-color '#2166AC' \
-  "$LOOPS" --style loop --side above --color '#303030' --line-width 0.8 \
+  "$LOOPS" --style loop --side both --color '#303030' --line-width 0.8 \
   --panel chr10:15500000-18300000 --panel-title 'chr10 loop-rich locus A' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
     --color '#B2182B' --neg-color '#2166AC' \
-  "$LOOPS" --style loop --side above --color '#303030' --line-width 0.8 \
+  "$LOOPS" --style loop --side both --color '#303030' --line-width 0.8 \
   --panel chr10:50500000-52500000 --panel-title 'chr10 loop-rich locus B' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
     --color '#B2182B' --neg-color '#2166AC' \
-  "$LOOPS" --style loop --side above --color '#303030' --line-width 0.8 \
+  "$LOOPS" --style loop --side both --color '#303030' --line-width 0.8 \
   --out examples/gallery/generated/04_multi_panel_shared_scale
 ```
 
-![Three vertically stacked loci sharing one fitted contact scale](generated/04_multi_panel_shared_scale.png)
+![Three vertically stacked square contact maps sharing one fitted contact scale](generated/04_multi_panel_shared_scale.png)
 
 ## 5. Dark off-diagonal rectangle
 
@@ -173,7 +174,7 @@ separate supplied genomic intervals across x and y as cyan and yellow bands.
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-128300000 \
   --layout rectangle --region-y chr8:128000000-130000000 \
-  --norm NONE --resolution 10000 --map-height 260 --map-linear \
+  --norm SCALE --resolution 10000 --map-height 260 --map-linear \
   --map-colors magma --map-percentile 0.995 \
   --width 7 --dpi 150 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \
@@ -191,10 +192,11 @@ separate supplied genomic intervals across x and y as cyan and yellow bands.
 
 ## Reproducibility notes
 
-- These examples intentionally use `--norm NONE` because `ENCFF080DPJ`
-  advertises `NONE` through its `.hic` metadata. GRE reports available
-  normalizations before rendering; do not assume `KR` or `SCALE` exists in
-  every public file.
+- These examples use the file's resolution-specific `SCALE` vectors. This
+  legacy version-9 `.hic` advertises only `NONE` in its top-level metadata,
+  but direct `SCALE` queries succeed at the 10 kb and 25 kb resolutions used
+  here. Normalization availability can be resolution-specific, so test the
+  requested normalization and resolution together for other public files.
 - URLs are quoted because `@` and other URL characters should reach GRE
   unchanged. The ENCODE URLs shown here do not currently contain shell `&`
   characters, but quoting remains the safe default.
