@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -543,6 +544,93 @@ void test_matrix_source() {
     CHECK_NEAR(coarse.at(0, 0), 2.5, 1e-5);  // mean of 0, 1, 4, 5
 }
 
+void test_split_map() {
+    const GenomicRegion region{"chr1", 0, 1000};
+    std::vector<float> values(100, 1.0F);
+    auto primary = MemoryMatrixSource::make(MatrixRegion::square(region), 100, 10, 10, values);
+    auto comparison =
+        MemoryMatrixSource::make(MatrixRegion::square(region), 100, 10, 10, values);
+
+    Figure figure;
+    figure.set_width(104.0).set_margins(Insets{0.0});
+    Panel& panel = figure.add_panel();
+    panel.set_region(region).set_label_width(0.0);
+    HeatmapTrack map{primary};
+    map.colors(ColorMap::from_stops({colors::red, colors::red}))
+        .limits(0.0, 1.0)
+        .comparison_colors(ColorMap::from_stops({colors::blue, colors::blue}))
+        .comparison_limits(0.0, 1.0)
+        .compare_with(comparison, MatrixHalf::below)
+        .margins(Insets{0.0})
+        .show_name(false);
+    panel.set_matrix(std::move(map));
+
+    const Image image = figure.render_image(72.0);
+    // The square is 100pt after the 4pt right gutter. Top-right is the primary
+    // (above-diagonal) source; bottom-left is the comparison source.
+    CHECK(image.get(80, 20) == colors::red);
+    CHECK(image.get(20, 80) == colors::blue);
+}
+
+void test_pair_sources_and_overlays() {
+    const auto bedpe_path = scratch("gre_test_annotations.bedpe");
+    {
+        std::ofstream out(bedpe_path);
+        out << "# test\n";
+        out << "chr1\t100\t150\tchr1\t700\t750\tloop-a\t42\n";
+        out << "chr2\t100\t150\tchr2\t700\t750\tother\t1\n";
+    }
+    auto source = BedpeSource::open(bedpe_path.string());
+    const auto pairs = source->query(GenomicRegion{"chr1", 0, 1000},
+                                     GenomicRegion{"chr1", 0, 1000});
+    CHECK(pairs.size() == 1);
+    CHECK(pairs[0].name == "loop-a");
+    CHECK(pairs[0].score.has_value());
+    CHECK_NEAR(*pairs[0].score, 42.0, 1e-9);
+
+    PairAnnotationLayer prepared{source};
+    prepared.prepare(GenomicRegion{"chr1", 0, 1000}, GenomicRegion{"chr1", 0, 1000});
+    CHECK(prepared.features().size() == 1);
+
+    std::vector<float> values(100, 0.0F);
+    auto matrix = MemoryMatrixSource::make(
+        MatrixRegion::square(GenomicRegion{"chr1", 0, 1000}), 100, 10, 10, values);
+    Figure figure;
+    figure.set_width(104.0).set_margins(Insets{0.0});
+    Panel& panel = figure.add_panel();
+    panel.set_region("chr1", 0, 1000).set_label_width(0.0);
+    HeatmapTrack map{matrix};
+    map.colors(ColorMap::from_stops({colors::white, colors::white}))
+        .limits(0.0, 1.0)
+        .margins(Insets{0.0})
+        .show_name(false);
+    map.add_annotation(PairAnnotationLayer{source}
+                           .style(PairAnnotationStyle::box)
+                           .side(AnnotationSide::above)
+                           .color(colors::red)
+                           .dashed());
+    map.add_highlight(MapHighlight{GenomicRegion{"chr1", 400, 500}, HighlightAxis::vertical}
+                          .fill(rgba(0, 255, 0, 128))
+                          .border(colors::green));
+    panel.set_matrix(std::move(map));
+
+    const Image image = figure.render_image(72.0);
+    // The highlight crosses the middle of the map but leaves its neighbour white.
+    CHECK(image.get(45, 50).g > image.get(45, 50).r);
+    CHECK(image.get(35, 50) == colors::white);
+
+    const auto svg_path = scratch("gre_test_annotations.svg");
+    figure.save_svg(svg_path.string());
+    std::ifstream svg_stream(svg_path);
+    const std::string svg((std::istreambuf_iterator<char>(svg_stream)),
+                          std::istreambuf_iterator<char>());
+    CHECK(svg.find("stroke-dasharray") != std::string::npos);
+    CHECK(svg.find("loop-a") == std::string::npos);  // labels default off
+
+    std::filesystem::remove(bedpe_path);
+    std::filesystem::remove(svg_path);
+}
+
 void test_symmetric_scale() {
     const Theme theme = Theme::light();
     ViewContext context;
@@ -759,6 +847,8 @@ int main() {
     test_layout();
     test_signal_source();
     test_matrix_source();
+    test_split_map();
+    test_pair_sources_and_overlays();
     test_symmetric_scale();
     test_gene_packing();
     test_full_render();

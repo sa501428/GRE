@@ -15,6 +15,7 @@ class HeatmapTrack;
 
 enum class BarOrientation { horizontal, vertical };
 enum class BarAlign { left, center, right };
+enum class HeatmapLayer { primary, comparison };
 
 // A continuous colour bar for a heatmap, with ticks read from the same value
 // scale so the legend cannot drift from the data.
@@ -24,6 +25,7 @@ public:
     // Takes the colour map and the fitted scale from a prepared heatmap track.
     // Add the heatmap to the panel first so its scale is resolved.
     explicit ColorBarTrack(const HeatmapTrack& heatmap);
+    ColorBarTrack(const HeatmapTrack& heatmap, HeatmapLayer layer);
 
     ColorBarTrack& orientation(BarOrientation value);
     ColorBarTrack& align(BarAlign value);
@@ -45,6 +47,7 @@ private:
     ColorMap colors_;
     ValueScale scale_;
     const HeatmapTrack* linked_{nullptr};
+    HeatmapLayer linked_layer_{HeatmapLayer::primary};
 
     BarOrientation orientation_{BarOrientation::horizontal};
     BarAlign align_{BarAlign::left};

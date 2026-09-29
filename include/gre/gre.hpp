@@ -24,6 +24,7 @@
 #include "gre/data/igv_sources.hpp"
 #include "gre/data/matrix_source.hpp"
 #include "gre/data/memory_sources.hpp"
+#include "gre/data/pair_source.hpp"
 #include "gre/data/signal_source.hpp"
 #include "gre/data/straw_matrix_source.hpp"
 
@@ -44,6 +45,7 @@
 #include "gre/tracks/heatmap_track.hpp"
 #include "gre/tracks/interval_track.hpp"
 #include "gre/tracks/legend_track.hpp"
+#include "gre/tracks/map_annotation.hpp"
 #include "gre/tracks/signal_track.hpp"
 
 #include "gre/export/png.hpp"

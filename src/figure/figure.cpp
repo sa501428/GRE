@@ -284,8 +284,6 @@ Figure::Layout Figure::build_layout(double device_scale) {
         };
 
         const double top_stack = prepare_band(panel.tracks_, state.heights, state.flex);
-        const double bottom_stack =
-            prepare_band(panel.bottom_tracks_, state.bottom_heights, state.bottom_flex);
 
         // The panel is up to three horizontal bands: tracks, then the square
         // map (when there is one), then the bottom tracks.
@@ -298,6 +296,10 @@ Figure::Layout Figure::build_layout(double device_scale) {
             content_height += state.map_side + panel.matrix_->margins().vertical() +
                               state.y_label_height;
         }
+        // Linked colour bars read their fitted scale from the matrix, so the
+        // matrix must be prepared before the bottom band in square layout.
+        const double bottom_stack =
+            prepare_band(panel.bottom_tracks_, state.bottom_heights, state.bottom_flex);
         if (!panel.bottom_tracks_.empty()) {
             if (!panel.tracks_.empty() || panel.square_layout()) content_height += state.spacing;
             content_height += bottom_stack;

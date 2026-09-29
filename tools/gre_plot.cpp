@@ -27,7 +27,7 @@ namespace {
 // Specifications built from the command line
 // ---------------------------------------------------------------------------
 
-enum class TrackKind { automatic, signal, gene, interval };
+enum class TrackKind { automatic, signal, gene, interval, bedpe };
 enum class TrackAxis { x, y, both };
 
 struct TrackSpec {
@@ -45,7 +45,7 @@ struct TrackSpec {
     std::optional<bool> symmetric;
     std::optional<bool> range_label;
     std::optional<bool> labels;
-    std::optional<SignalStyle> style;
+    std::optional<std::string> style;
     std::optional<std::string> colormap;
     std::optional<double> row_height;
     std::optional<double> line_width;
@@ -53,6 +53,21 @@ struct TrackSpec {
     std::optional<std::string> aggregate;
     bool log{false};
     bool y_axis{false};
+
+    AnnotationSide annotation_side{AnnotationSide::both};
+    std::optional<Color> fill;
+    std::vector<double> dash;
+    std::int64_t expansion{0};
+};
+
+struct HighlightSpec {
+    GenomicRegion region;
+    HighlightAxis axis{HighlightAxis::vertical};
+    Color fill{rgba(255, 215, 0, 48)};
+    Color border{rgba(190, 130, 0, 180)};
+    double line_width{0.8};
+    std::vector<double> dash;
+    std::int64_t expansion{0};
 };
 
 struct Options {
@@ -90,7 +105,20 @@ struct Options {
     bool diagonal{false};
     std::optional<Color> map_border;
 
+    // Split/VS map. The second source occupies one triangle of a square map.
+    std::string comparison_path;
+    std::optional<std::string> comparison_normalization;
+    bool comparison_oe{false};
+    std::int32_t comparison_resolution{0};
+    std::optional<std::string> comparison_colors;
+    std::optional<double> comparison_min;
+    std::optional<double> comparison_max;
+    std::optional<double> comparison_percentile;
+    std::optional<bool> comparison_log;
+    MatrixHalf comparison_half{MatrixHalf::below};
+
     std::vector<TrackSpec> tracks;
+    std::vector<HighlightSpec> highlights;
 };
 
 // ---------------------------------------------------------------------------
@@ -176,7 +204,42 @@ TrackKind kind_from_extension(const std::string& path) {
         ends_with(name, ".peak")) {
         return TrackKind::interval;
     }
+    if (ends_with(name, ".bedpe") || ends_with(name, ".bedpe.gz")) {
+        return TrackKind::bedpe;
+    }
     return TrackKind::automatic;
+}
+
+std::vector<double> parse_dash(const std::string& text) {
+    std::vector<double> out;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t comma = text.find(',', start);
+        const std::string part =
+            text.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+        if (!part.empty()) {
+            const double value = std::stod(part);
+            if (!(value > 0.0)) {
+                throw Error(ErrorCode::invalid_argument, "dash lengths must be positive");
+            }
+            out.push_back(value);
+        }
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    if (out.empty()) throw Error(ErrorCode::invalid_argument, "dash pattern is empty");
+    return out;
+}
+
+PairAnnotationStyle parse_annotation_style(const std::string& text) {
+    const std::string value = lower(text);
+    if (value == "loop" || value == "loops") return PairAnnotationStyle::loop;
+    if (value == "box" || value == "boxes") return PairAnnotationStyle::box;
+    if (value == "domain" || value == "tad" || value == "triangle") {
+        return PairAnnotationStyle::domain;
+    }
+    throw Error(ErrorCode::invalid_argument,
+                "unknown BEDPE style '" + text + "' (use loop, box, or domain)");
 }
 
 SignalStyle parse_style(const std::string& text) {
@@ -261,7 +324,8 @@ void print_usage(const char* program) {
         "\n"
         "Options after a track file apply to that track.  Track files are\n"
         "recognised by extension: bigWig/bedGraph/wig become signal tracks,\n"
-        "BED/GFF/GTF/bigBed gene tracks, narrowPeak/broadPeak interval tracks.\n"
+        "BED/GFF/GTF/bigBed gene tracks, narrowPeak/broadPeak interval tracks,\n"
+        "and BEDPE map overlays.\n"
         "\n"
         "Global:\n"
         "  --region CHR:START-END   region to plot (also accepted bare)\n"
@@ -289,6 +353,22 @@ void print_usage(const char* program) {
         "  --max-distance BP        pyramid: how far from the diagonal to show\n"
         "  --diagonal               draw the diagonal in square layout\n"
         "  --map-border HEX         outline the map\n"
+        "  --vs FILE.hic            split square map with a second Hi-C file\n"
+        "  --vs-side above|below    half occupied by --vs (default below)\n"
+        "  --vs-norm NAME           normalization for --vs (default --norm)\n"
+        "  --vs-oe                  observed/expected for --vs\n"
+        "  --vs-resolution BP       resolution for --vs (default --resolution)\n"
+        "  --vs-map-colors NAME     independent comparison colour map\n"
+        "  --vs-map-min/max V       independent comparison limits\n"
+        "  --vs-map-percentile P    independent comparison clipping\n"
+        "  --vs-map-log/linear      independent comparison value scaling\n"
+        "  --v-highlight REGION     translucent vertical map highlight\n"
+        "  --h-highlight REGION     translucent horizontal map highlight\n"
+        "  --xy-highlight REGION    vertical and horizontal highlight\n"
+        "  --highlight-color HEX    fill for the preceding highlight\n"
+        "  --highlight-border HEX   border for the preceding highlight\n"
+        "  --highlight-width PT / --highlight-dashed / --highlight-dash A,B\n"
+        "  --highlight-expand BP    expand the preceding highlight\n"
         "  --no-map                 tracks only, no contact map\n"
         "\n"
         "Per track:\n"
@@ -302,16 +382,21 @@ void print_usage(const char* program) {
         "                           (default: on when the data spans zero)\n"
         "  --baseline V             where area and bar tracks are anchored\n"
         "  --log                    log value scaling\n"
-        "  --style line|area|bars|points       default area\n"
+        "  --style line|area|bars|points       signal style, default area\n"
+        "          loop|box|domain             BEDPE overlay style\n"
         "  --aggregate mean|max|min|sum        binning, default mean\n"
         "  --line-width PT\n"
         "  --y-axis                 ticked y axis instead of a range label\n"
         "  --no-range-label\n"
         "  --colormap NAME          colour intervals by score\n"
-        "  --no-labels              hide gene names\n"
+        "  --labels / --no-labels   show or hide names\n"
         "  --row-height PT          gene track row pitch\n"
-        "  --type signal|gene|interval         override the extension guess\n"
-        "  --axis x|y|both          square layout: which axis (default x)\n",
+        "  --type signal|gene|interval|bedpe   override the extension guess\n"
+        "  --axis x|y|both          square layout: which axis (default x)\n"
+        "  --side above|below|both  BEDPE placement (default both)\n"
+        "  --expand BP              expand BEDPE anchors\n"
+        "  --fill HEX               BEDPE overlay fill (alpha accepted)\n"
+        "  --dashed / --dash A,B    BEDPE outline dash pattern\n",
         program);
 }
 
@@ -363,7 +448,7 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             if (spec.kind == TrackKind::automatic) {
                 throw Error(ErrorCode::invalid_argument,
                             "cannot tell what '" + argument +
-                                "' is from its extension; add --type signal|gene|interval");
+                                "' is from its extension; add --type signal|gene|interval|bedpe");
             }
             out.tracks.push_back(std::move(spec));
             current = &out.tracks.back();
@@ -451,6 +536,85 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             out.diagonal = true;
         } else if (argument == "--map-border") {
             out.map_border = color_from_hex(value("--map-border"));
+        } else if (argument == "--vs" || argument == "--compare-hic") {
+            out.comparison_path = value("--vs");
+        } else if (argument == "--vs-side") {
+            const std::string side = lower(value("--vs-side"));
+            if (side == "above") {
+                out.comparison_half = MatrixHalf::above;
+            } else if (side == "below") {
+                out.comparison_half = MatrixHalf::below;
+            } else {
+                throw Error(ErrorCode::invalid_argument, "--vs-side wants above or below");
+            }
+        } else if (argument == "--vs-norm") {
+            out.comparison_normalization = value("--vs-norm");
+        } else if (argument == "--vs-oe") {
+            out.comparison_oe = true;
+        } else if (argument == "--vs-resolution") {
+            out.comparison_resolution =
+                static_cast<std::int32_t>(parse_bases(value("--vs-resolution")));
+        } else if (argument == "--vs-map-colors" || argument == "--vs-map-colours") {
+            out.comparison_colors = value("--vs-map-colors");
+        } else if (argument == "--vs-map-min") {
+            out.comparison_min = std::stod(value("--vs-map-min"));
+        } else if (argument == "--vs-map-max") {
+            out.comparison_max = std::stod(value("--vs-map-max"));
+        } else if (argument == "--vs-map-percentile") {
+            out.comparison_percentile = std::stod(value("--vs-map-percentile"));
+        } else if (argument == "--vs-map-log") {
+            out.comparison_log = true;
+        } else if (argument == "--vs-map-linear") {
+            out.comparison_log = false;
+        } else if (argument == "--v-highlight" || argument == "--h-highlight" ||
+                   argument == "--xy-highlight") {
+            GenomicRegion region;
+            if (!parse_region(value(argument.c_str()), region)) {
+                throw Error(ErrorCode::invalid_argument,
+                            argument + " wants CHR:START-END");
+            }
+            HighlightSpec highlight;
+            highlight.region = std::move(region);
+            highlight.axis = argument == "--v-highlight"   ? HighlightAxis::vertical
+                             : argument == "--h-highlight" ? HighlightAxis::horizontal
+                                                             : HighlightAxis::both;
+            out.highlights.push_back(std::move(highlight));
+        } else if (argument == "--highlight-color" || argument == "--highlight-colour") {
+            if (out.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--highlight-color needs a preceding highlight");
+            }
+            out.highlights.back().fill = color_from_hex(value("--highlight-color"));
+        } else if (argument == "--highlight-border") {
+            if (out.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--highlight-border needs a preceding highlight");
+            }
+            out.highlights.back().border = color_from_hex(value("--highlight-border"));
+        } else if (argument == "--highlight-width") {
+            if (out.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--highlight-width needs a preceding highlight");
+            }
+            out.highlights.back().line_width = std::stod(value("--highlight-width"));
+        } else if (argument == "--highlight-dashed") {
+            if (out.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--highlight-dashed needs a preceding highlight");
+            }
+            out.highlights.back().dash = {4.0, 2.5};
+        } else if (argument == "--highlight-dash") {
+            if (out.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--highlight-dash needs a preceding highlight");
+            }
+            out.highlights.back().dash = parse_dash(value("--highlight-dash"));
+        } else if (argument == "--highlight-expand") {
+            if (out.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--highlight-expand needs a preceding highlight");
+            }
+            out.highlights.back().expansion = parse_bases(value("--highlight-expand"));
         } else if (argument == "--no-map") {
             out.no_map = true;
 
@@ -478,7 +642,7 @@ bool parse_command_line(int argc, char** argv, Options& out) {
         } else if (argument == "--log") {
             track_option("--log").log = true;
         } else if (argument == "--style") {
-            track_option("--style").style = parse_style(value("--style"));
+            track_option("--style").style = lower(value("--style"));
         } else if (argument == "--aggregate") {
             track_option("--aggregate").aggregate = value("--aggregate");
         } else if (argument == "--line-width") {
@@ -491,6 +655,8 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             track_option("--colormap").colormap = value("--colormap");
         } else if (argument == "--no-labels") {
             track_option("--no-labels").labels = false;
+        } else if (argument == "--labels") {
+            track_option("--labels").labels = true;
         } else if (argument == "--row-height") {
             track_option("--row-height").row_height = std::stod(value("--row-height"));
         } else if (argument == "--type") {
@@ -502,6 +668,8 @@ bool parse_command_line(int argc, char** argv, Options& out) {
                 spec.kind = TrackKind::gene;
             } else if (kind == "interval") {
                 spec.kind = TrackKind::interval;
+            } else if (kind == "bedpe" || kind == "pair") {
+                spec.kind = TrackKind::bedpe;
             } else {
                 throw Error(ErrorCode::invalid_argument, "unknown --type '" + kind + "'");
             }
@@ -517,6 +685,26 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             } else {
                 throw Error(ErrorCode::invalid_argument, "--axis wants x, y or both");
             }
+        } else if (argument == "--side") {
+            const std::string side = lower(value("--side"));
+            TrackSpec& spec = track_option("--side");
+            if (side == "above") {
+                spec.annotation_side = AnnotationSide::above;
+            } else if (side == "below") {
+                spec.annotation_side = AnnotationSide::below;
+            } else if (side == "both") {
+                spec.annotation_side = AnnotationSide::both;
+            } else {
+                throw Error(ErrorCode::invalid_argument, "--side wants above, below or both");
+            }
+        } else if (argument == "--expand") {
+            track_option("--expand").expansion = parse_bases(value("--expand"));
+        } else if (argument == "--fill") {
+            track_option("--fill").fill = color_from_hex(value("--fill"));
+        } else if (argument == "--dashed") {
+            track_option("--dashed").dash = {4.0, 2.5};
+        } else if (argument == "--dash") {
+            track_option("--dash").dash = parse_dash(value("--dash"));
         } else if (argument == "--track-height") {
             track_option("--track-height").height = std::stod(value("--track-height"));
         } else {
@@ -533,6 +721,7 @@ bool parse_command_line(int argc, char** argv, Options& out) {
 struct LoadedSource {
     SignalSourcePtr signal;
     FeatureSourcePtr features;
+    PairFeatureSourcePtr pairs;
 };
 
 LoadedSource load(const TrackSpec& spec) {
@@ -542,6 +731,8 @@ LoadedSource load(const TrackSpec& spec) {
         source->fill_empty(0.0);
         if (spec.aggregate.has_value()) source->aggregation(parse_aggregation(*spec.aggregate));
         loaded.signal = std::make_shared<CachingSignalSource>(source);
+    } else if (spec.kind == TrackKind::bedpe) {
+        loaded.pairs = BedpeSource::open(spec.path);
     } else {
         loaded.features = std::make_shared<CachingFeatureSource>(IgvFeatureSource::open(spec.path));
     }
@@ -557,7 +748,7 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
     if (spec.kind == TrackKind::signal) {
         auto track = std::make_unique<SignalTrack>(source.signal);
         track->name(name);
-        track->style(spec.style.value_or(SignalStyle::area));
+        track->style(spec.style.has_value() ? parse_style(*spec.style) : SignalStyle::area);
         track->color(spec.color.value_or(kPositiveDefault));
         track->negative_color(spec.negative_color.value_or(kNegativeDefault));
         if (spec.height.has_value()) track->height(*spec.height);
@@ -606,8 +797,22 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
     return track;
 }
 
+PairAnnotationLayer build_annotation(const TrackSpec& spec, const LoadedSource& source) {
+    PairAnnotationLayer layer{source.pairs};
+    layer.style(spec.style.has_value() ? parse_annotation_style(*spec.style)
+                                       : PairAnnotationStyle::loop);
+    layer.side(spec.annotation_side);
+    layer.color(spec.color.value_or(rgb(30, 30, 30)));
+    if (spec.fill.has_value()) layer.fill(*spec.fill);
+    if (spec.line_width.has_value()) layer.line_width(*spec.line_width);
+    if (!spec.dash.empty()) layer.dash(spec.dash);
+    if (spec.expansion > 0) layer.expand(spec.expansion);
+    layer.show_labels(spec.labels.value_or(false));
+    return layer;
+}
+
 std::unique_ptr<HeatmapTrack> build_map(const Options& options, const MatrixSourcePtr& source,
-                                        HeatmapMode mode) {
+                                        const MatrixSourcePtr& comparison, HeatmapMode mode) {
     auto map = std::make_unique<HeatmapTrack>(source);
     map->name("Hi-C");
     map->mode(mode);
@@ -632,6 +837,25 @@ std::unique_ptr<HeatmapTrack> build_map(const Options& options, const MatrixSour
         scale.upper_percentile(options.map_percentile.value_or(0.99));
     }
     map->scale(scale);
+
+    if (comparison != nullptr) {
+        map->compare_with(comparison, options.comparison_half);
+        map->comparison_colors(ColorMap::named(options.comparison_colors.value_or(
+            options.comparison_oe ? std::string("rd_bu")
+                                  : options.map_colors.value_or(std::string("juicebox")))));
+        const bool comparison_log = options.comparison_log.value_or(!options.comparison_oe);
+        ValueScale comparison_scale;
+        if (options.comparison_oe) {
+            comparison_scale = ValueScale{options.comparison_min.value_or(0.25),
+                                          options.comparison_max.value_or(4.0), ScaleType::log};
+        } else {
+            if (comparison_log) comparison_scale.type(ScaleType::log1p);
+            if (options.comparison_min.has_value()) comparison_scale.min(*options.comparison_min);
+            if (options.comparison_max.has_value()) comparison_scale.max(*options.comparison_max);
+            comparison_scale.upper_percentile(options.comparison_percentile.value_or(0.99));
+        }
+        map->comparison_scale(comparison_scale);
+    }
     return map;
 }
 
@@ -675,6 +899,21 @@ int main(int argc, char** argv) {
         auto matrix = StrawMatrixSource::open(options.hic_path, straw);
         describe(*matrix);
 
+        MatrixSourcePtr comparison;
+        std::shared_ptr<StrawMatrixSource> comparison_straw;
+        if (!options.comparison_path.empty()) {
+            StrawOptions comparison_options;
+            comparison_options.normalization =
+                options.comparison_normalization.value_or(options.normalization);
+            comparison_options.matrix_type = options.comparison_oe ? "oe" : "observed";
+            comparison_options.resolution = options.comparison_resolution > 0
+                                                ? options.comparison_resolution
+                                                : options.resolution;
+            comparison_straw =
+                StrawMatrixSource::open(options.comparison_path, comparison_options);
+            comparison = comparison_straw;
+        }
+
         if (options.region.chrom.empty()) options.region = default_region(*matrix);
         std::printf("region: %s\n", format_region(options.region.chrom, options.region.start,
                                                   options.region.end)
@@ -686,6 +925,12 @@ int main(int argc, char** argv) {
             options.layout != "triangle") {
             throw Error(ErrorCode::invalid_argument,
                         "--layout wants square, pyramid or rectangle");
+        }
+        if (comparison != nullptr && !square) {
+            throw Error(ErrorCode::invalid_argument, "--vs requires --layout square");
+        }
+        if (comparison != nullptr && options.no_map) {
+            throw Error(ErrorCode::invalid_argument, "--vs cannot be combined with --no-map");
         }
 
         Figure figure;
@@ -716,6 +961,7 @@ int main(int argc, char** argv) {
         panel.add_track(AxisTrack{}.show_region(!square));
         for (std::size_t i = 0; i < options.tracks.size(); ++i) {
             const TrackSpec& spec = options.tracks[i];
+            if (spec.kind == TrackKind::bedpe) continue;
             const bool on_x = spec.axis != TrackAxis::y || !square;
             if (on_x) panel.add_track(build_track(spec, sources[i], /*vertical=*/false));
         }
@@ -725,29 +971,72 @@ int main(int argc, char** argv) {
             panel.add_y_track(AxisTrack{}.position(AxisPosition::bottom).height(26.0));
             for (std::size_t i = 0; i < options.tracks.size(); ++i) {
                 const TrackSpec& spec = options.tracks[i];
+                if (spec.kind == TrackKind::bedpe) continue;
                 if (spec.axis == TrackAxis::x) continue;
                 panel.add_y_track(build_track(spec, sources[i], /*vertical=*/true));
             }
             if (!options.no_map) {
                 map = static_cast<HeatmapTrack*>(
-                    &panel.set_matrix(build_map(options, matrix, HeatmapMode::square)));
+                    &panel.set_matrix(build_map(options, matrix, comparison,
+                                                HeatmapMode::square)));
             }
             panel.add_bottom_track(AxisTrack{}.position(AxisPosition::bottom));
         } else if (!options.no_map) {
             const HeatmapMode mode =
                 rectangle ? HeatmapMode::rectangle : HeatmapMode::triangle;
             map = static_cast<HeatmapTrack*>(
-                &panel.add_track(build_map(options, matrix, mode)));
+                &panel.add_track(build_map(options, matrix, comparison, mode)));
         }
 
         if (map != nullptr) {
-            panel.add_bottom_track(ColorBarTrack{*map}
-                                       .title(options.oe ? "obs/exp"
+            for (std::size_t i = 0; i < options.tracks.size(); ++i) {
+                if (options.tracks[i].kind == TrackKind::bedpe) {
+                    map->add_annotation(build_annotation(options.tracks[i], sources[i]));
+                }
+            }
+            for (const HighlightSpec& spec : options.highlights) {
+                MapHighlight highlight{spec.region, spec.axis};
+                highlight.fill(spec.fill)
+                    .border(spec.border, spec.line_width)
+                    .dash(spec.dash)
+                    .expand(spec.expansion);
+                map->add_highlight(std::move(highlight));
+            }
+
+            const std::string primary_title = options.oe ? "obs/exp"
                                               : options.map_log.value_or(true)
                                                   ? "contacts (log)"
-                                                  : "contacts")
-                                       .align(BarAlign::right)
-                                       .bar_length(110.0));
+                                                  : "contacts";
+            if (comparison != nullptr) {
+                panel.add_bottom_track(
+                    ColorBarTrack{*map, HeatmapLayer::primary}
+                        .title(basename(options.hic_path) + " — " + primary_title)
+                        .align(BarAlign::left)
+                        .bar_length(110.0));
+                const std::string comparison_title =
+                    options.comparison_oe ? "obs/exp"
+                    : options.comparison_log.value_or(true) ? "contacts (log)"
+                                                            : "contacts";
+                panel.add_bottom_track(
+                    ColorBarTrack{*map, HeatmapLayer::comparison}
+                        .title(basename(options.comparison_path) + " — " + comparison_title)
+                        .align(BarAlign::right)
+                        .bar_length(110.0));
+            } else {
+                panel.add_bottom_track(ColorBarTrack{*map}
+                                           .title(primary_title)
+                                           .align(BarAlign::right)
+                                           .bar_length(110.0));
+            }
+        } else {
+            const bool has_overlay = std::any_of(options.tracks.begin(), options.tracks.end(),
+                                                 [](const TrackSpec& spec) {
+                                                     return spec.kind == TrackKind::bedpe;
+                                                 });
+            if (has_overlay || !options.highlights.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "BEDPE overlays and highlights require a contact map");
+            }
         }
 
         for (const std::string& format : options.formats) {

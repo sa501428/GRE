@@ -35,6 +35,11 @@ ColorBarTrack::ColorBarTrack(const HeatmapTrack& heatmap) : linked_(&heatmap) {
     show_name_ = false;
 }
 
+ColorBarTrack::ColorBarTrack(const HeatmapTrack& heatmap, HeatmapLayer layer)
+    : linked_(&heatmap), linked_layer_(layer) {
+    show_name_ = false;
+}
+
 ColorBarTrack& ColorBarTrack::orientation(BarOrientation value) {
     orientation_ = value;
     return *this;
@@ -88,8 +93,13 @@ void ColorBarTrack::prepare(const ViewContext& context) {
     capture_view(context);
     if (linked_ != nullptr) {
         // The heatmap has already been prepared, so its scale is final.
-        colors_ = linked_->color_map();
-        scale_ = linked_->value_scale();
+        if (linked_layer_ == HeatmapLayer::comparison) {
+            colors_ = linked_->comparison_color_map();
+            scale_ = linked_->comparison_value_scale();
+        } else {
+            colors_ = linked_->color_map();
+            scale_ = linked_->value_scale();
+        }
     }
 
     // A gradient strip drawn as an image stays smooth in PDF as well as PNG.

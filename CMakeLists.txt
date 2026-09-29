@@ -64,10 +64,12 @@ add_library(gre
     src/tracks/axis_track.cpp
     src/tracks/signal_track.cpp
     src/tracks/heatmap_track.cpp
+    src/tracks/map_annotation.cpp
     src/tracks/gene_track.cpp
     src/tracks/interval_track.cpp
     src/tracks/legend_track.cpp
     src/data/memory_sources.cpp
+    src/data/pair_source.cpp
     src/data/straw_matrix_source.cpp
     src/data/igv_sources.cpp
     src/export/png.cpp

@@ -38,6 +38,10 @@ fig.save_pdf("figure.pdf");
   one bin per output pixel rather than at the file's native resolution.
 - **Gene models** with exons, coding ranges, strand arrows and automatic row
   packing; **interval tracks** for peaks, domains and states.
+- **Split/VS maps** with independent matrices and colour scales above and below
+  the diagonal; **BEDPE overlays** for loops, boxes and TAD/domain outlines.
+- **Map highlights** projected as vertical and/or horizontal genomic bands,
+  with optional translucent fill, borders and dash patterns.
 - **Axes, colour bars, legends, grids, themes**, multiple panels.
 - **PNG, PDF and SVG** from one figure definition, at any resolution.
 
@@ -72,6 +76,51 @@ panel.add_bottom_track(AxisTrack{}.position(AxisPosition::bottom));
 panel.add_bottom_track(ColorBarTrack{map}.title("contacts (log)"));
 ```
 
+## Split/VS maps and 2D annotations
+
+A square map can combine two independent matrix sources. The primary source is
+drawn in one triangle and the comparison source in the other. The sources may
+use different normalization, matrix type, resolution, colour map and value
+scale.
+
+```cpp
+auto control = StrawMatrixSource::open("control.hic");
+auto treated = StrawMatrixSource::open("treated.hic");
+auto loops = BedpeSource::open("loops.bedpe.gz");
+
+HeatmapTrack map{control};
+map.mode(HeatmapMode::square)
+   .colors("reds")
+   .compare_with(treated, MatrixHalf::below)
+   .comparison_colors("blues");
+
+map.add_annotation(PairAnnotationLayer{loops}
+    .style(PairAnnotationStyle::loop)
+    .side(AnnotationSide::both)
+    .color(color_from_hex("#202020"))
+    .dashed()
+    .expand(5'000));
+
+map.add_highlight(MapHighlight{{"chr1", 21'000'000, 21'200'000},
+                               HighlightAxis::vertical}
+    .fill(color_from_hex("#FFD70030"))
+    .border(color_from_hex("#A07000")));
+
+panel.set_matrix(std::move(map));
+```
+
+`PairAnnotationStyle::loop` draws an ellipse at each anchor intersection,
+`box` draws a rectangle, and `domain` draws a triangular domain outline against
+the diagonal. `AnnotationSide::above`, `below`, and `both` control which half
+of a square map receives intra-chromosomal annotations. In pyramid layout the
+single visible upper triangle is used; a `below`-only layer is therefore not
+drawn.
+
+Highlights are vector overlays. Vertical highlights work in every layout;
+horizontal genomic highlights work in square and rectangle layouts. A pyramid's
+vertical coordinate is contact distance rather than a genomic y axis, so GRE
+does not draw a misleading horizontal genomic band there.
+
 ## Building
 
 Requires CMake ≥ 3.24, a C++20 compiler, zlib, and the two sibling data
@@ -99,7 +148,8 @@ not be self-contained, because GRE does not install straw or igv-cpp.
 
 ## gre_plot
 
-`gre_plot` composes a figure from a `.hic` file and any number of 1D tracks.
+`gre_plot` composes a figure from a `.hic` file, any number of 1D tracks, and
+BEDPE overlays.
 Options that follow a track file apply to that track; everything else is
 global. `--help` lists them all.
 
@@ -111,9 +161,24 @@ global. `--help` lists them all.
     genes.bed --name Genes --no-labels
 ```
 
+A split map with loops, a TAD layer, and a highlighted interval can be produced
+directly from the CLI:
+
+```bash
+./build/tools/gre_plot control.hic chr2:40000000-44000000 \
+    --layout square --norm SCALE \
+    --vs treated.hic --vs-norm SCALE --vs-side below \
+    --map-colors reds --vs-map-colors blues \
+    loops.bedpe --style loop --side both --dashed --expand 5kb \
+    domains.bedpe --style domain --side above --color '#333333' \
+    --v-highlight chr2:41500000-41750000 \
+    --highlight-color '#FFD70030' --highlight-dashed
+```
+
 Track files are recognised by extension — bigWig/bedGraph/wig become signal
 tracks, BED/GFF/GTF/genePred/bigBed gene tracks, narrowPeak/broadPeak interval
-tracks. `--type` overrides the guess.
+tracks, and `.bedpe`/`.bedpe.gz` files become 2D map overlays. `--type`
+overrides the guess.
 
 ### Figure options
 
@@ -148,6 +213,23 @@ tracks. `--type` overrides the guess.
 | `--max-distance BP` | pyramid: how far from the diagonal to show | the whole region |
 | `--diagonal` | draw the diagonal in square layout | off |
 | `--map-border HEX` | outline the map | none |
+| `--vs FILE.hic` | use a second matrix in one triangle of a square map | none |
+| `--vs-side above\|below` | triangle occupied by the second matrix | `below` |
+| `--vs-norm NAME` | normalization for the second matrix | primary `--norm` |
+| `--vs-oe` | use observed/expected for the second matrix | off |
+| `--vs-resolution BP` | force the second matrix resolution | primary `--resolution` |
+| `--vs-map-colors NAME` | second matrix colour map | `juicebox`, or `rd_bu` with `--vs-oe` |
+| `--vs-map-min V` / `--vs-map-max V` | second matrix colour range | fitted independently |
+| `--vs-map-percentile P` | second matrix upper clipping percentile | `0.99` |
+| `--vs-map-log` / `--vs-map-linear` | second matrix scaling | log unless `--vs-oe` |
+| `--v-highlight REGION` | add a vertical map highlight | none |
+| `--h-highlight REGION` | add a horizontal map highlight | none |
+| `--xy-highlight REGION` | add vertical and horizontal highlights | none |
+| `--highlight-color HEX` | fill of the preceding highlight; alpha is accepted | `#FFD70030` |
+| `--highlight-border HEX` | border of the preceding highlight | translucent ochre |
+| `--highlight-width PT` | border width of the preceding highlight | `0.8` |
+| `--highlight-dashed` / `--highlight-dash A,B` | dashed highlight border | solid |
+| `--highlight-expand BP` | expand the preceding highlighted interval | `0` |
 | `--no-map` | tracks only, no contact map | off |
 
 ### Per-track options
@@ -166,15 +248,20 @@ Each applies to the track file it follows.
 | `--baseline V` | where area and bar tracks are anchored | `0` |
 | `--log` | log value scaling | off |
 | `--style line\|area\|bars\|points` | how a signal is drawn | `area` |
+| `--style loop\|box\|domain` | how a BEDPE layer is drawn | `loop` |
 | `--aggregate mean\|max\|min\|sum` | how records are combined into a bin | `mean` |
 | `--line-width PT` | stroke width for `line` and `points` | `0.8` |
 | `--y-axis` | ticked y axis in the gutter instead of a range label | off |
 | `--no-range-label` | hide the `[min - max]` annotation | shown |
 | `--colormap NAME` | colour intervals by score | none |
-| `--no-labels` | hide gene names | shown on x, hidden on y |
+| `--labels` / `--no-labels` | show or hide names | genes shown on x; BEDPE hidden |
 | `--row-height PT` | gene or interval row pitch | `13` / `11` |
-| `--type signal\|gene\|interval` | override the extension guess | from the extension |
+| `--type signal\|gene\|interval\|bedpe` | override the extension guess | from the extension |
 | `--axis x\|y\|both` | square layout: which axis the track annotates | `x` |
+| `--side above\|below\|both` | square-map placement of a BEDPE layer | `both` |
+| `--expand BP` | expand both BEDPE anchors | `0` |
+| `--fill HEX` | BEDPE shape fill; alpha is accepted | transparent |
+| `--dashed` / `--dash A,B` | BEDPE outline dash pattern in points | solid |
 
 Aliases: `--label` for `--name`, `--track-height` and `--height-pt` for a
 per-track `--height` where the positional meaning of `--height` would be
@@ -217,8 +304,8 @@ Figure → Panel → Track → Canvas → backend
 - `tracks/` — heatmap, signal, gene, interval, axis, colour bar, legend.
 - `render/` — the `Canvas` interface plus raster, PDF and SVG backends, text
   and font handling.
-- `data/` — `SignalSource`, `FeatureSource`, `MatrixSource` and the straw /
-  igv-cpp / in-memory adapters.
+- `data/` — `SignalSource`, `FeatureSource`, `PairFeatureSource`, `MatrixSource`
+  and the straw / igv-cpp / BEDPE / in-memory adapters.
 - `export/` — PNG and PDF writers.
 
 Figure coordinates are PDF points (72 per inch) with the origin at the

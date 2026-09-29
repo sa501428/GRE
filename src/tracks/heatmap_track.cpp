@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "gre/core/error.hpp"
 
@@ -18,6 +19,85 @@ int pixels_for(double figure_units, double device_scale) {
     return std::min(kMaxImageDimension, static_cast<int>(std::lround(pixels)));
 }
 
+double midpoint(const GenomicRegion& region) {
+    return (static_cast<double>(region.start) + static_cast<double>(region.end)) / 2.0;
+}
+
+bool chrom_matches(const GenomicRegion& a, const GenomicRegion& b) {
+    return a.chrom.empty() || b.chrom.empty() || a.chrom == b.chrom;
+}
+
+GenomicRegion expanded(GenomicRegion region, std::int64_t amount) {
+    region.start = std::max<std::int64_t>(0, region.start - amount);
+    region.end += amount;
+    return region;
+}
+
+float sample_matrix(const MatrixData& data, double x, double y) {
+    if (data.empty()) return std::numeric_limits<float>::quiet_NaN();
+    const double x_span = static_cast<double>(data.region.x_end - data.region.x_start);
+    const double y_span = static_cast<double>(data.region.y_end - data.region.y_start);
+    if (!(x_span > 0.0) || !(y_span > 0.0)) {
+        return std::numeric_limits<float>::quiet_NaN();
+    }
+    const auto column = static_cast<std::ptrdiff_t>(std::floor(
+        (x - static_cast<double>(data.region.x_start)) / x_span * data.width));
+    const auto row = static_cast<std::ptrdiff_t>(std::floor(
+        (y - static_cast<double>(data.region.y_start)) / y_span * data.height));
+    if (row < 0 || column < 0 || static_cast<std::size_t>(row) >= data.height ||
+        static_cast<std::size_t>(column) >= data.width) {
+        return std::numeric_limits<float>::quiet_NaN();
+    }
+    return data.at(static_cast<std::size_t>(row), static_cast<std::size_t>(column));
+}
+
+Rect visible_box(const GenomicTransform& x, const GenomicTransform& y, const GenomicRegion& xr,
+                 const GenomicRegion& yr, double minimum = 4.0) {
+    double left = x.x(xr.start);
+    double right = x.x(xr.end);
+    double top = y.x(yr.start);
+    double bottom = y.x(yr.end);
+    if (right < left) std::swap(left, right);
+    if (bottom < top) std::swap(top, bottom);
+    if (right - left < minimum) {
+        const double centre = (left + right) / 2.0;
+        left = centre - minimum / 2.0;
+        right = centre + minimum / 2.0;
+    }
+    if (bottom - top < minimum) {
+        const double centre = (top + bottom) / 2.0;
+        top = centre - minimum / 2.0;
+        bottom = centre + minimum / 2.0;
+    }
+    return Rect::from_edges(left, top, right, bottom);
+}
+
+std::vector<Point> ellipse_points(const Rect& rect) {
+    constexpr int kSegments = 32;
+    constexpr double kPi = 3.14159265358979323846;
+    std::vector<Point> points;
+    points.reserve(kSegments + 1);
+    for (int i = 0; i <= kSegments; ++i) {
+        const double angle = 2.0 * kPi * static_cast<double>(i) / kSegments;
+        points.push_back(Point{rect.center_x() + std::cos(angle) * rect.width / 2.0,
+                               rect.center_y() + std::sin(angle) * rect.height / 2.0});
+    }
+    return points;
+}
+
+void paint_shape(Canvas& canvas, const std::vector<Point>& points, Color fill,
+                 const StrokeStyle& stroke, bool closed = true) {
+    if (!fill.transparent() && points.size() >= 3) canvas.fill_polygon(points, fill);
+    if (!stroke.color.transparent()) {
+        std::vector<Point> outline = points;
+        if (closed && !outline.empty() &&
+            (outline.front().x != outline.back().x || outline.front().y != outline.back().y)) {
+            outline.push_back(outline.front());
+        }
+        canvas.stroke_polyline(outline, stroke);
+    }
+}
+
 }  // namespace
 
 HeatmapTrack::HeatmapTrack(MatrixSourcePtr source) : source_(std::move(source)) {
@@ -25,10 +105,12 @@ HeatmapTrack::HeatmapTrack(MatrixSourcePtr source) : source_(std::move(source)) 
         throw Error(ErrorCode::invalid_argument, "HeatmapTrack needs a matrix source");
     }
     scale_.upper_percentile(0.99);
+    comparison_scale_.upper_percentile(0.99);
 }
 
 HeatmapTrack::HeatmapTrack(MatrixData data) : data_(std::move(data)), have_data_(true) {
     scale_.upper_percentile(0.99);
+    comparison_scale_.upper_percentile(0.99);
 }
 
 HeatmapTrack& HeatmapTrack::mode(HeatmapMode value) {
@@ -66,6 +148,45 @@ HeatmapTrack& HeatmapTrack::upper_percentile(double value) {
     return *this;
 }
 
+HeatmapTrack& HeatmapTrack::compare_with(MatrixSourcePtr source, MatrixHalf half) {
+    if (source == nullptr) {
+        throw Error(ErrorCode::invalid_argument, "comparison matrix source cannot be null");
+    }
+    comparison_source_ = std::move(source);
+    comparison_half_ = half;
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::comparison_colors(ColorMap value) {
+    comparison_colors_ = std::move(value);
+    comparison_colors_set_ = true;
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::comparison_colors(const std::string& name) {
+    return comparison_colors(ColorMap::named(name));
+}
+
+HeatmapTrack& HeatmapTrack::comparison_scale(ValueScale value) {
+    comparison_scale_ = std::move(value);
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::comparison_limits(double low, double high) {
+    comparison_scale_.limits(low, high);
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::comparison_log_scale(bool value) {
+    comparison_scale_.type(value ? ScaleType::log1p : ScaleType::linear);
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::comparison_upper_percentile(double value) {
+    comparison_scale_.upper_percentile(std::clamp(value, 0.0, 1.0));
+    return *this;
+}
+
 HeatmapTrack& HeatmapTrack::max_distance(std::int64_t bases) {
     max_distance_ = std::max<std::int64_t>(0, bases);
     return *this;
@@ -98,6 +219,16 @@ HeatmapTrack& HeatmapTrack::background(Color color) {
     return *this;
 }
 
+PairAnnotationLayer& HeatmapTrack::add_annotation(PairAnnotationLayer layer) {
+    annotations_.push_back(std::move(layer));
+    return annotations_.back();
+}
+
+MapHighlight& HeatmapTrack::add_highlight(MapHighlight highlight) {
+    highlights_.push_back(std::move(highlight));
+    return highlights_.back();
+}
+
 double HeatmapTrack::default_height() const {
     if (resolved_height_ > 0.0) return resolved_height_;
     // Before prepare() runs this is only a hint for the provisional layout.
@@ -107,6 +238,15 @@ double HeatmapTrack::default_height() const {
 void HeatmapTrack::prepare(const ViewContext& context) {
     capture_view(context);
     if (!colors_set_ && context.theme != nullptr) colors_ = context.theme->heatmap_colors;
+    if (!comparison_colors_set_) comparison_colors_ = colors_;
+    if (comparison_source_ != nullptr && mode_ != HeatmapMode::square) {
+        throw Error(ErrorCode::invalid_argument,
+                    "split comparison matrices are supported only in square mode");
+    }
+    if (comparison_source_ != nullptr && !(context.x_region == context.y_region)) {
+        throw Error(ErrorCode::invalid_argument,
+                    "split comparison matrices require identical x and y regions");
+    }
 
     const GenomicRegion& x_region = context.x_region;
     const GenomicRegion& y_region =
@@ -153,6 +293,11 @@ void HeatmapTrack::prepare(const ViewContext& context) {
     }
     if (!have_data_ || data_.empty()) return;
 
+    if (comparison_source_ != nullptr) {
+        comparison_data_ = comparison_source_->query(MatrixRegion::square(x_region),
+                                                     target_width, target_height);
+    }
+
     if (scale_.auto_min() || scale_.auto_max()) {
         ValueScale fitted = scale_;
         if (fitted.fit(data_.values.data(), data_.values.size())) {
@@ -167,6 +312,26 @@ void HeatmapTrack::prepare(const ViewContext& context) {
         }
     }
 
+    if (comparison_source_ != nullptr && comparison_data_.empty()) {
+        comparison_scale_.limits(0.0, 1.0);
+    } else if (!comparison_data_.empty() &&
+               (comparison_scale_.auto_min() || comparison_scale_.auto_max())) {
+        ValueScale fitted = comparison_scale_;
+        if (fitted.fit(comparison_data_.values.data(), comparison_data_.values.size())) {
+            if (comparison_scale_.auto_min() && fitted.min() > 0.0 &&
+                comparison_scale_.type() != ScaleType::symlog) {
+                fitted.min(0.0);
+            }
+            comparison_scale_ = fitted;
+        } else {
+            comparison_scale_.limits(0.0, 1.0);
+        }
+    }
+
+    for (PairAnnotationLayer& annotation : annotations_) {
+        annotation.prepare(x_region, y_region);
+    }
+
     if (mode_ == HeatmapMode::triangle) {
         build_triangle_image(context.device_scale);
     } else {
@@ -175,6 +340,44 @@ void HeatmapTrack::prepare(const ViewContext& context) {
 }
 
 void HeatmapTrack::build_square_image() {
+    if (comparison_source_ != nullptr) {
+        const std::size_t width = std::max(data_.width, comparison_data_.width);
+        const std::size_t height = std::max(data_.height, comparison_data_.height);
+        image_ = Image(static_cast<int>(width), static_cast<int>(height));
+        const auto& primary_lut = colors_.lut();
+        const auto& comparison_lut = comparison_colors_.lut();
+        const double x_start = static_cast<double>(view().x_region.start);
+        const double y_start = static_cast<double>(view().y_region.start);
+        const double x_span = static_cast<double>(view().x_region.span());
+        const double y_span = static_cast<double>(view().y_region.span());
+        for (std::size_t row = 0; row < height; ++row) {
+            std::uint8_t* out = image_.row(static_cast<int>(row));
+            const double y = y_start + (row + 0.5) / height * y_span;
+            for (std::size_t column = 0; column < width; ++column) {
+                const double x = x_start + (column + 0.5) / width * x_span;
+                const bool below = y > x;
+                const bool use_comparison = comparison_half_ == MatrixHalf::below ? below : !below;
+                const MatrixData& selected = use_comparison ? comparison_data_ : data_;
+                const ValueScale& selected_scale =
+                    use_comparison ? comparison_scale_ : scale_;
+                const auto& lut = use_comparison ? comparison_lut : primary_lut;
+                const Color bad =
+                    use_comparison ? comparison_colors_.bad() : colors_.bad();
+                const double unit = selected_scale.normalize(sample_matrix(selected, x, y));
+                const Color color =
+                    std::isnan(unit)
+                        ? bad
+                        : lut[static_cast<std::size_t>(
+                              unit * static_cast<double>(ColorMap::kLutSize - 1))];
+                out[column * 4 + 0] = color.r;
+                out[column * 4 + 1] = color.g;
+                out[column * 4 + 2] = color.b;
+                out[column * 4 + 3] = color.a;
+            }
+        }
+        return;
+    }
+
     // One image pixel per matrix bin: the backends scale it, so nothing is
     // resampled twice and the PDF embeds exactly the data that was loaded.
     image_ = Image(static_cast<int>(data_.width), static_cast<int>(data_.height));
@@ -268,6 +471,179 @@ void HeatmapTrack::build_triangle_image(double device_scale) {
     }
 }
 
+void HeatmapTrack::draw_highlights(Canvas& canvas, const TrackRect& rect) const {
+    for (const MapHighlight& highlight : highlights_) {
+        const GenomicRegion region = expanded(highlight.region(), highlight.expansion());
+        StrokeStyle stroke;
+        stroke.color = highlight.border_color();
+        stroke.width = highlight.border_width();
+        stroke.dash = highlight.dash();
+
+        const auto paint = [&](const Rect& band) {
+            if (!highlight.fill().transparent()) canvas.fill_rect(band, highlight.fill());
+            if (!stroke.color.transparent()) canvas.stroke_rect(band, stroke);
+        };
+
+        if ((highlight.axis() == HighlightAxis::vertical ||
+             highlight.axis() == HighlightAxis::both) &&
+            chrom_matches(region, view().x_region)) {
+            const double x0 = rect.x.x(region.start);
+            const double x1 = rect.x.x(region.end);
+            paint(Rect::from_edges(std::min(x0, x1), rect.content.top(), std::max(x0, x1),
+                                   rect.content.bottom()));
+        }
+
+        // A triangle map's vertical coordinate is contact distance rather than
+        // a genomic axis, so a horizontal genomic highlight has no honest
+        // projection there.
+        if (mode_ != HeatmapMode::triangle &&
+            (highlight.axis() == HighlightAxis::horizontal ||
+             highlight.axis() == HighlightAxis::both) &&
+            chrom_matches(region, view().y_region)) {
+            const double y0 = rect.y.x(region.start);
+            const double y1 = rect.y.x(region.end);
+            paint(Rect::from_edges(rect.content.left(), std::min(y0, y1),
+                                   rect.content.right(), std::max(y0, y1)));
+        }
+    }
+}
+
+void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const {
+    for (const PairAnnotationLayer& layer : annotations_) {
+        StrokeStyle base_stroke;
+        base_stroke.color = layer.color();
+        base_stroke.width = layer.line_width();
+        base_stroke.dash = layer.dash();
+        base_stroke.join = LineJoin::round;
+
+        TextStyle label_style;
+        label_style.font = theme().font;
+        label_style.size = layer.label_font_size() > 0.0 ? layer.label_font_size()
+                                                        : theme().small_font_size;
+        label_style.color = layer.color();
+        label_style.valign = VerticalAlign::bottom;
+
+        for (const PairFeature& feature : layer.features()) {
+            GenomicRegion first = expanded(feature.first, layer.expansion());
+            GenomicRegion second = expanded(feature.second, layer.expansion());
+            StrokeStyle stroke = base_stroke;
+            stroke.color = feature.color.value_or(layer.color());
+
+            if (mode_ == HeatmapMode::triangle) {
+                if (layer.side() == AnnotationSide::below ||
+                    !chrom_matches(first, view().x_region) ||
+                    !chrom_matches(second, view().x_region)) {
+                    continue;
+                }
+                if (midpoint(first) > midpoint(second)) std::swap(first, second);
+                const double start = std::min<double>(first.start, second.start);
+                const double end = std::max<double>(first.end, second.end);
+                const double centre = (midpoint(first) + midpoint(second)) / 2.0;
+                const double distance = std::max(0.0, midpoint(second) - midpoint(first));
+                const double x = rect.x.x(centre);
+                const double y = rect.content.top() +
+                                 std::min(distance / std::max<double>(shown_distance_, 1.0), 1.0) *
+                                     rect.content.height;
+
+                Rect label_box;
+                if (layer.style() == PairAnnotationStyle::domain) {
+                    const std::vector<Point> triangle = {
+                        {rect.x.x(start), rect.content.top()},
+                        {rect.x.x(end), rect.content.top()},
+                        {rect.x.x((start + end) / 2.0),
+                         rect.content.top() +
+                             std::min((end - start) /
+                                          std::max<double>(shown_distance_, 1.0),
+                                      1.0) *
+                                 rect.content.height},
+                    };
+                    paint_shape(canvas, triangle, layer.fill(), stroke);
+                    label_box = Rect::from_edges(rect.x.x(start), rect.content.top(),
+                                                 rect.x.x(end), triangle.back().y);
+                } else {
+                    const double width = std::max(
+                        4.0, std::fabs(rect.x.width_of(first.span() + second.span()) / 2.0));
+                    const double height = std::max(4.0, width * 0.65);
+                    label_box = Rect{x - width / 2.0, y - height / 2.0, width, height};
+                    if (layer.style() == PairAnnotationStyle::loop) {
+                        paint_shape(canvas, ellipse_points(label_box), layer.fill(), stroke);
+                    } else {
+                        if (!layer.fill().transparent()) canvas.fill_rect(label_box, layer.fill());
+                        canvas.stroke_rect(label_box, stroke);
+                    }
+                }
+                if (layer.labels_visible() && !feature.name.empty()) {
+                    canvas.draw_text(Point{label_box.right() + 2.0, label_box.top()}, feature.name,
+                                     label_style);
+                }
+                continue;
+            }
+
+            const bool same_axis = mode_ == HeatmapMode::square &&
+                                   view().x_region == view().y_region &&
+                                   first.chrom == second.chrom &&
+                                   chrom_matches(first, view().x_region);
+
+            const auto draw_at = [&](const GenomicRegion& xr, const GenomicRegion& yr,
+                                     AnnotationSide side) {
+                Rect label_box;
+                if (layer.style() == PairAnnotationStyle::domain && same_axis) {
+                    const double start = std::min<double>(first.start, second.start);
+                    const double end = std::max<double>(first.end, second.end);
+                    std::vector<Point> triangle;
+                    if (side == AnnotationSide::above) {
+                        triangle = {{rect.x.x(start), rect.y.x(start)},
+                                    {rect.x.x(end), rect.y.x(start)},
+                                    {rect.x.x(end), rect.y.x(end)}};
+                    } else {
+                        triangle = {{rect.x.x(start), rect.y.x(start)},
+                                    {rect.x.x(start), rect.y.x(end)},
+                                    {rect.x.x(end), rect.y.x(end)}};
+                    }
+                    paint_shape(canvas, triangle, layer.fill(), stroke);
+                    label_box = visible_box(rect.x, rect.y,
+                                            GenomicRegion{first.chrom,
+                                                          static_cast<std::int64_t>(start),
+                                                          static_cast<std::int64_t>(end)},
+                                            GenomicRegion{first.chrom,
+                                                          static_cast<std::int64_t>(start),
+                                                          static_cast<std::int64_t>(end)});
+                } else {
+                    label_box = visible_box(rect.x, rect.y, xr, yr);
+                    if (layer.style() == PairAnnotationStyle::loop) {
+                        paint_shape(canvas, ellipse_points(label_box), layer.fill(), stroke);
+                    } else {
+                        if (!layer.fill().transparent()) canvas.fill_rect(label_box, layer.fill());
+                        canvas.stroke_rect(label_box, stroke);
+                    }
+                }
+                if (layer.labels_visible() && !feature.name.empty()) {
+                    canvas.draw_text(Point{label_box.right() + 2.0, label_box.top()}, feature.name,
+                                     label_style);
+                }
+            };
+
+            if (same_axis) {
+                if (midpoint(first) > midpoint(second)) std::swap(first, second);
+                if (layer.side() == AnnotationSide::above ||
+                    layer.side() == AnnotationSide::both) {
+                    draw_at(second, first, AnnotationSide::above);
+                }
+                if (layer.side() == AnnotationSide::below ||
+                    layer.side() == AnnotationSide::both) {
+                    draw_at(first, second, AnnotationSide::below);
+                }
+            } else if (chrom_matches(first, view().x_region) &&
+                       chrom_matches(second, view().y_region)) {
+                draw_at(first, second, AnnotationSide::above);
+            } else if (chrom_matches(second, view().x_region) &&
+                       chrom_matches(first, view().y_region)) {
+                draw_at(second, first, AnnotationSide::above);
+            }
+        }
+    }
+}
+
 void HeatmapTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     if (rect.content.empty()) return;
     if (!background_.transparent()) canvas.fill_rect(rect.content, background_);
@@ -276,6 +652,9 @@ void HeatmapTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     const ImageScaling scaling =
         interpolate_ ? ImageScaling::bilinear : ImageScaling::automatic;
     canvas.draw_image(rect.content, image_.view(scaling));
+
+    draw_highlights(canvas, rect);
+    draw_annotations(canvas, rect);
 
     if (show_diagonal_ && mode_ == HeatmapMode::square) {
         StrokeStyle stroke;
