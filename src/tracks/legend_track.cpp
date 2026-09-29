@@ -118,6 +118,13 @@ void ColorBarTrack::prepare(const ViewContext& context) {
     }
 }
 
+void ColorBarTrack::finalize_prepare() {
+    if (linked_ == nullptr) return;
+    scale_ = linked_layer_ == HeatmapLayer::comparison
+                 ? linked_->comparison_value_scale()
+                 : linked_->value_scale();
+}
+
 void ColorBarTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     if (gradient_.empty() || rect.content.empty()) return;
     const Theme& theme_ref = theme();

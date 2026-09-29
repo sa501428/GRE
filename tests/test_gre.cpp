@@ -631,6 +631,89 @@ void test_pair_sources_and_overlays() {
     std::filesystem::remove(svg_path);
 }
 
+void test_score_styled_pairs() {
+    std::vector<PairFeature> features;
+    for (int i = 0; i < 3; ++i) {
+        PairFeature feature;
+        feature.first = GenomicRegion{"chr1", 100 + i * 100, 120 + i * 100};
+        feature.second = GenomicRegion{"chr1", 700 + i * 50, 720 + i * 50};
+        feature.score = i == 0 ? 1.0 : i == 1 ? 5.0 : 10.0;
+        features.push_back(feature);
+    }
+    PairAnnotationLayer layer{MemoryPairFeatureSource::make(std::move(features))};
+    layer.fill(colors::white)
+        .score_filter(2.0, 10.0)
+        .color_by_score("viridis")
+        .opacity_by_score(0.2, 1.0)
+        .line_width_by_score(0.5, 3.0)
+        .size_by_score(0.75, 1.5);
+    layer.prepare(GenomicRegion{"chr1", 0, 1000}, GenomicRegion{"chr1", 0, 1000});
+    CHECK(layer.features().size() == 2);
+    const PairFeature& low = layer.features().front();
+    const PairFeature& high = layer.features().back();
+    CHECK(layer.color_for(low) != layer.color_for(high));
+    CHECK(layer.color_for(low).a < layer.color_for(high).a);
+    CHECK(layer.line_width_for(low) < layer.line_width_for(high));
+    CHECK(layer.size_for(low) < layer.size_for(high));
+}
+
+void test_virtual4c_source() {
+    const GenomicRegion region{"chr1", 0, 400};
+    const std::vector<float> values = {
+        1.0F, 2.0F, 3.0F, 4.0F,
+        5.0F, 6.0F, 7.0F, 8.0F,
+        9.0F, 10.0F, 11.0F, 12.0F,
+        13.0F, 14.0F, 15.0F, 16.0F,
+    };
+    auto matrix = MemoryMatrixSource::make(MatrixRegion::square(region), 100, 4, 4, values);
+    auto source = Virtual4CSource::make(matrix, GenomicRegion{"chr1", 0, 200});
+    SignalData mean = source->query(region, 4);
+    CHECK(mean.size() == 4);
+    CHECK_NEAR(mean.values[0], 3.0, 1e-9);
+    CHECK_NEAR(mean.values[3], 6.0, 1e-9);
+
+    source->aggregation(Virtual4CSource::Aggregation::sum);
+    SignalData sum = source->query(region, 4);
+    CHECK_NEAR(sum.values[0], 6.0, 1e-9);
+    CHECK_NEAR(sum.values[3], 12.0, 1e-9);
+
+    source->aggregation(Virtual4CSource::Aggregation::maximum);
+    SignalData maximum = source->query(region, 4);
+    CHECK_NEAR(maximum.values[0], 5.0, 1e-9);
+    CHECK_NEAR(maximum.values[3], 8.0, 1e-9);
+}
+
+void test_shared_heatmap_scale() {
+    const GenomicRegion region{"chr1", 0, 400};
+    auto low = MemoryMatrixSource::make(MatrixRegion::square(region), 100, 4, 4,
+                                        std::vector<float>(16, 2.0F));
+    auto high = MemoryMatrixSource::make(MatrixRegion::square(region), 100, 4, 4,
+                                         std::vector<float>(16, 100.0F));
+    auto shared = std::make_shared<HeatmapScaleGroup>();
+
+    Figure figure;
+    figure.set_width(240.0);
+    Panel& first = figure.add_panel();
+    first.set_region(region);
+    HeatmapTrack& first_map = first.add_track(
+        HeatmapTrack{low}.height(40.0).square_aspect(false).shared_scale(shared));
+    Panel& second = figure.add_panel();
+    second.set_region(region);
+    HeatmapTrack& second_map = second.add_track(
+        HeatmapTrack{high}.height(40.0).square_aspect(false).shared_scale(shared));
+
+    (void)figure.render_image(72.0);
+    CHECK_NEAR(first_map.value_scale().min(), second_map.value_scale().min(), 1e-9);
+    CHECK_NEAR(first_map.value_scale().max(), second_map.value_scale().max(), 1e-9);
+    CHECK(first_map.value_scale().max() >= 100.0);
+
+    // A second export starts a fresh joint fit instead of reusing the fitted
+    // limits as if they had been explicitly configured.
+    (void)figure.render_image(144.0);
+    CHECK_NEAR(first_map.value_scale().max(), second_map.value_scale().max(), 1e-9);
+    CHECK(first_map.value_scale().max() >= 100.0);
+}
+
 void test_symmetric_scale() {
     const Theme theme = Theme::light();
     ViewContext context;
@@ -849,6 +932,9 @@ int main() {
     test_matrix_source();
     test_split_map();
     test_pair_sources_and_overlays();
+    test_score_styled_pairs();
+    test_virtual4c_source();
+    test_shared_heatmap_scale();
     test_symmetric_scale();
     test_gene_packing();
     test_full_render();

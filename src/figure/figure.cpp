@@ -1,6 +1,7 @@
 #include "gre/figure/figure.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 #include "gre/core/error.hpp"
@@ -170,6 +171,8 @@ Figure::Layout Figure::build_layout(double device_scale) {
         }
     };
     std::vector<Prepared> prepared(panels_.size());
+    static std::atomic<std::uint64_t> next_preparation_id{1};
+    const std::uint64_t preparation_id = next_preparation_id.fetch_add(1);
 
     for (std::size_t p = 0; p < panels_.size(); ++p) {
         Panel& panel = *panels_[p];
@@ -198,6 +201,7 @@ Figure::Layout Figure::build_layout(double device_scale) {
         context.y_region = panel.region_y();
         context.device_scale = device_scale;
         context.theme = &theme_;
+        context.preparation_id = preparation_id;
 
         // Square panels reserve columns on the left for the quarter-turned
         // tracks, and the map takes whatever square fits in what is left.
@@ -314,6 +318,17 @@ Figure::Layout Figure::build_layout(double device_scale) {
         if (panel.height_ > 0.0) {
             state.distribute(panel.height_ - natural, state.total_flex());
         }
+    }
+
+    // Shared resources (notably multi-panel heatmap scales) can only resolve
+    // after all panels have submitted their data. Finalize in panel order so
+    // linked legends see the completed map scales as well.
+    for (const auto& panel_ptr : panels_) {
+        Panel& panel = *panel_ptr;
+        for (const auto& track : panel.tracks_) track->finalize_prepare();
+        for (const auto& track : panel.y_tracks_) track->finalize_prepare();
+        if (panel.matrix_ != nullptr) panel.matrix_->finalize_prepare();
+        for (const auto& track : panel.bottom_tracks_) track->finalize_prepare();
     }
 
     double natural_total = cursor;

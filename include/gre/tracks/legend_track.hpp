@@ -36,6 +36,7 @@ public:
     ColorBarTrack& border(Color color, double width = 0.4);
 
     void prepare(const ViewContext& context) override;
+    void finalize_prepare() override;
     void draw(Canvas& canvas, const TrackRect& rect) const override;
 
     [[nodiscard]] bool wants_label_gutter() const override { return false; }

@@ -27,13 +27,23 @@ namespace {
 // Specifications built from the command line
 // ---------------------------------------------------------------------------
 
-enum class TrackKind { automatic, signal, gene, interval, bedpe };
+enum class TrackKind { automatic, signal, gene, interval, bedpe, virtual4c };
 enum class TrackAxis { x, y, both };
+
+struct PanelSpec {
+    GenomicRegion region;
+    GenomicRegion region_y;
+    bool has_region_y{false};
+    std::string title;
+    bool has_title{false};
+};
 
 struct TrackSpec {
     std::string path;
     TrackKind kind{TrackKind::automatic};
     TrackAxis axis{TrackAxis::x};
+    std::size_t panel_index{0};
+    std::optional<GenomicRegion> viewpoint;
 
     std::optional<std::string> name;
     std::optional<Color> color;
@@ -58,9 +68,15 @@ struct TrackSpec {
     std::optional<Color> fill;
     std::vector<double> dash;
     std::int64_t expansion{0};
+    std::optional<double> score_filter_min;
+    std::optional<double> score_filter_max;
+    std::optional<std::pair<double, double>> score_opacity;
+    std::optional<std::pair<double, double>> score_line_width;
+    std::optional<std::pair<double, double>> score_size;
 };
 
 struct HighlightSpec {
+    std::size_t panel_index{0};
     GenomicRegion region;
     HighlightAxis axis{HighlightAxis::vertical};
     Color fill{rgba(255, 215, 0, 48)};
@@ -72,9 +88,7 @@ struct HighlightSpec {
 
 struct Options {
     std::string hic_path;
-    GenomicRegion region;
-    GenomicRegion region_y;
-    bool has_region_y{false};
+    std::vector<PanelSpec> panels{PanelSpec{}};
 
     std::string layout{"pyramid"};
     std::string output{"figure"};
@@ -89,6 +103,7 @@ struct Options {
     bool has_subtitle{false};
     std::optional<bool> grid;
     double label_width{-1.0};
+    double panel_spacing{-1.0};
 
     // Contact map
     bool no_map{false};
@@ -104,6 +119,7 @@ struct Options {
     std::int64_t max_distance{0};
     bool diagonal{false};
     std::optional<Color> map_border;
+    bool shared_map_scale{false};
 
     // Split/VS map. The second source occupies one triangle of a square map.
     std::string comparison_path;
@@ -150,20 +166,17 @@ std::string stem(const std::string& path) {
     return name;
 }
 
+std::int64_t parse_bases(const std::string& text);
+
 bool parse_region(const std::string& text, GenomicRegion& out) {
     const std::size_t colon = text.rfind(':');
     if (colon == std::string::npos) return false;
     const std::size_t dash = text.find('-', colon);
     if (dash == std::string::npos) return false;
-    const auto to_number = [](std::string value) {
-        value.erase(std::remove(value.begin(), value.end(), ','), value.end());
-        value.erase(std::remove(value.begin(), value.end(), '_'), value.end());
-        return std::stoll(value);
-    };
     try {
         out.chrom = text.substr(0, colon);
-        out.start = to_number(text.substr(colon + 1, dash - colon - 1));
-        out.end = to_number(text.substr(dash + 1));
+        out.start = parse_bases(text.substr(colon + 1, dash - colon - 1));
+        out.end = parse_bases(text.substr(dash + 1));
     } catch (const std::exception&) {
         return false;
     }
@@ -229,6 +242,15 @@ std::vector<double> parse_dash(const std::string& text) {
     }
     if (out.empty()) throw Error(ErrorCode::invalid_argument, "dash pattern is empty");
     return out;
+}
+
+std::pair<double, double> parse_pair(const std::string& text, const char* name) {
+    const std::size_t comma = text.find(',');
+    if (comma == std::string::npos || text.find(',', comma + 1) != std::string::npos) {
+        throw Error(ErrorCode::invalid_argument,
+                    std::string(name) + " wants two comma-separated numbers");
+    }
+    return {std::stod(text.substr(0, comma)), std::stod(text.substr(comma + 1))};
 }
 
 PairAnnotationStyle parse_annotation_style(const std::string& text) {
@@ -329,6 +351,9 @@ void print_usage(const char* program) {
         "\n"
         "Global:\n"
         "  --region CHR:START-END   region to plot (also accepted bare)\n"
+        "  --panel CHR:START-END    start another vertically stacked panel\n"
+        "  --panel-title TEXT       title for the current panel\n"
+        "  --panel-spacing PT       gap between panels\n"
         "  --region-y CHR:START-END second axis, for an off-diagonal block\n"
         "  --layout square|pyramid|rectangle   default pyramid\n"
         "  --out PREFIX             output name stem (default figure)\n"
@@ -353,6 +378,7 @@ void print_usage(const char* program) {
         "  --max-distance BP        pyramid: how far from the diagonal to show\n"
         "  --diagonal               draw the diagonal in square layout\n"
         "  --map-border HEX         outline the map\n"
+        "  --shared-map-scale       jointly fit map colours across panels\n"
         "  --vs FILE.hic            split square map with a second Hi-C file\n"
         "  --vs-side above|below    half occupied by --vs (default below)\n"
         "  --vs-norm NAME           normalization for --vs (default --norm)\n"
@@ -370,6 +396,7 @@ void print_usage(const char* program) {
         "  --highlight-width PT / --highlight-dashed / --highlight-dash A,B\n"
         "  --highlight-expand BP    expand the preceding highlight\n"
         "  --no-map                 tracks only, no contact map\n"
+        "  --virtual4c REGION       matrix viewpoint as a new signal track\n"
         "\n"
         "Per track:\n"
         "  --name TEXT              label (default: the file name stem)\n"
@@ -396,8 +423,69 @@ void print_usage(const char* program) {
         "  --side above|below|both  BEDPE placement (default both)\n"
         "  --expand BP              expand BEDPE anchors\n"
         "  --fill HEX               BEDPE overlay fill (alpha accepted)\n"
-        "  --dashed / --dash A,B    BEDPE outline dash pattern\n",
-        program);
+        "  --dashed / --dash A,B    BEDPE outline dash pattern\n"
+        "  --score-filter-min/max V BEDPE score filtering\n"
+        "  --score-opacity A,B      map low/high BEDPE scores to opacity\n"
+        "  --score-line-width A,B   map scores to outline width in points\n"
+        "  --score-size A,B         map scores to marker-size multipliers\n"
+        "\n"
+        "Scoping rules:\n"
+        "  Global options may appear anywhere. Per-track options apply to the\n"
+        "  most recently named track file. BEDPE files are overlays on the map,\n"
+        "  not separate rows. Highlight styling applies to the most recently\n"
+        "  declared --v-highlight, --h-highlight or --xy-highlight.\n"
+        "  --panel starts a new scope: following tracks and highlights belong\n"
+        "  to that panel. --virtual4c creates a track, so track options that\n"
+        "  follow it style that profile.\n"
+        "\n"
+        "Examples:\n"
+        "  # Rotated pyramid with genes and a signal track\n"
+        "  %s sample.hic chr8:127000000-129000000 atac.bigWig --name ATAC genes.bed\n"
+        "\n"
+        "  # Square map with the same compartment track on both axes\n"
+        "  %s sample.hic chr1:20Mb-24Mb --layout square eigen.bedGraph --axis both\n"
+        "\n"
+        "  # Off-diagonal or inter-chromosomal rectangle\n"
+        "  %s sample.hic chr1:10Mb-15Mb --layout rectangle --region-y chr2:30Mb-35Mb\n"
+        "\n"
+        "  # Observed/expected map with a fixed diverging range\n"
+        "  %s sample.hic chr3:40Mb-50Mb --oe --map-min 0.5 --map-max 2 --map-colors rd_bu\n"
+        "\n"
+        "  # Two samples split across the diagonal\n"
+        "  %s control.hic chr2:40Mb-44Mb --layout square --norm SCALE \\\n"
+        "      --vs treated.hic --vs-norm SCALE --vs-side below \\\n"
+        "      --map-colors reds --vs-map-colors blues\n"
+        "\n"
+        "  # Loops in both halves and dashed TADs above the diagonal\n"
+        "  %s sample.hic chr2:40Mb-44Mb --layout square \\\n"
+        "      loops.bedpe.gz --style loop --side both --color '#202020' \\\n"
+        "      domains.bedpe --style domain --side above --dashed --expand 5kb\n"
+        "\n"
+        "  # Translucent vertical and horizontal highlighted intervals\n"
+        "  %s sample.hic chr5:70Mb-75Mb --layout square \\\n"
+        "      --v-highlight chr5:71Mb-71.2Mb --highlight-color '#FFD70030' \\\n"
+        "      --h-highlight chr5:73Mb-73.1Mb --highlight-dashed\n"
+        "\n"
+        "  # Score-driven loop styling\n"
+        "  %s sample.hic chr2:40Mb-44Mb --layout square loops.bedpe \\\n"
+        "      --score-filter-min 5 --colormap viridis \\\n"
+        "      --score-opacity 0.2,1 --score-line-width 0.5,2.5 --score-size 0.7,1.6\n"
+        "\n"
+        "  # Direct virtual 4C profile plus its viewpoint marker\n"
+        "  %s sample.hic chr3:45Mb-49Mb --virtual4c chr3:46.2Mb-46.25Mb \\\n"
+        "      --name Promoter --style line --aggregate mean \\\n"
+        "      --v-highlight chr3:46.2Mb-46.25Mb\n"
+        "\n"
+        "  # Three panels with one jointly fitted primary map scale\n"
+        "  %s sample.hic chr1:20Mb-24Mb --shared-map-scale \\\n"
+        "      --panel chr8:127Mb-129Mb --panel-title MYC \\\n"
+        "      --panel chr12:10Mb-13Mb --panel-title CDK2\n"
+        "\n"
+        "  # Publication outputs at explicit raster resolution\n"
+        "  %s sample.hic chr7:50Mb-54Mb --formats png,pdf,svg --dpi 600 \\\n"
+        "      --width 7.2 --theme publication --out figure\n",
+        program, program, program, program, program, program, program, program, program,
+        program, program, program);
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +506,7 @@ bool parse_command_line(int argc, char** argv, Options& out) {
     out.hic_path = argv[1];
 
     TrackSpec* current = nullptr;
+    std::size_t current_panel = 0;
     for (int i = 2; i < argc; ++i) {
         const std::string argument = argv[i];
         const auto value = [&](const char* name) -> std::string {
@@ -439,12 +528,13 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             // A bare word is either the region or a track file.
             GenomicRegion region;
             if (parse_region(argument, region)) {
-                out.region = region;
+                out.panels[current_panel].region = region;
                 continue;
             }
             TrackSpec spec;
             spec.path = argument;
             spec.kind = kind_from_extension(argument);
+            spec.panel_index = current_panel;
             if (spec.kind == TrackKind::automatic) {
                 throw Error(ErrorCode::invalid_argument,
                             "cannot tell what '" + argument +
@@ -457,14 +547,25 @@ bool parse_command_line(int argc, char** argv, Options& out) {
 
         // ---- global ----
         if (argument == "--region") {
-            if (!parse_region(value("--region"), out.region)) {
+            if (!parse_region(value("--region"), out.panels[current_panel].region)) {
                 throw Error(ErrorCode::invalid_argument, "--region wants CHR:START-END");
             }
+        } else if (argument == "--panel") {
+            PanelSpec panel;
+            if (!parse_region(value("--panel"), panel.region)) {
+                throw Error(ErrorCode::invalid_argument, "--panel wants CHR:START-END");
+            }
+            out.panels.push_back(std::move(panel));
+            current_panel = out.panels.size() - 1;
+            current = nullptr;
+        } else if (argument == "--panel-title") {
+            out.panels[current_panel].title = value("--panel-title");
+            out.panels[current_panel].has_title = true;
         } else if (argument == "--region-y") {
-            if (!parse_region(value("--region-y"), out.region_y)) {
+            if (!parse_region(value("--region-y"), out.panels[current_panel].region_y)) {
                 throw Error(ErrorCode::invalid_argument, "--region-y wants CHR:START-END");
             }
-            out.has_region_y = true;
+            out.panels[current_panel].has_region_y = true;
         } else if (argument == "--layout") {
             out.layout = lower(value("--layout"));
         } else if (argument == "--out") {
@@ -508,6 +609,8 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             out.grid = false;
         } else if (argument == "--label-width") {
             out.label_width = std::stod(value("--label-width"));
+        } else if (argument == "--panel-spacing") {
+            out.panel_spacing = std::stod(value("--panel-spacing"));
 
             // ---- contact map ----
         } else if (argument == "--norm") {
@@ -536,6 +639,8 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             out.diagonal = true;
         } else if (argument == "--map-border") {
             out.map_border = color_from_hex(value("--map-border"));
+        } else if (argument == "--shared-map-scale") {
+            out.shared_map_scale = true;
         } else if (argument == "--vs" || argument == "--compare-hic") {
             out.comparison_path = value("--vs");
         } else if (argument == "--vs-side") {
@@ -574,6 +679,7 @@ bool parse_command_line(int argc, char** argv, Options& out) {
                             argument + " wants CHR:START-END");
             }
             HighlightSpec highlight;
+            highlight.panel_index = current_panel;
             highlight.region = std::move(region);
             highlight.axis = argument == "--v-highlight"   ? HighlightAxis::vertical
                              : argument == "--h-highlight" ? HighlightAxis::horizontal
@@ -617,6 +723,21 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             out.highlights.back().expansion = parse_bases(value("--highlight-expand"));
         } else if (argument == "--no-map") {
             out.no_map = true;
+
+        } else if (argument == "--virtual4c") {
+            GenomicRegion viewpoint;
+            if (!parse_region(value("--virtual4c"), viewpoint)) {
+                throw Error(ErrorCode::invalid_argument,
+                            "--virtual4c wants CHR:START-END");
+            }
+            TrackSpec spec;
+            spec.path = "virtual4c";
+            spec.kind = TrackKind::virtual4c;
+            spec.panel_index = current_panel;
+            spec.viewpoint = std::move(viewpoint);
+            spec.style = "line";
+            out.tracks.push_back(std::move(spec));
+            current = &out.tracks.back();
 
             // ---- per track ----
         } else if (argument == "--name" || argument == "--label") {
@@ -705,6 +826,21 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             track_option("--dashed").dash = {4.0, 2.5};
         } else if (argument == "--dash") {
             track_option("--dash").dash = parse_dash(value("--dash"));
+        } else if (argument == "--score-filter-min") {
+            track_option("--score-filter-min").score_filter_min =
+                std::stod(value("--score-filter-min"));
+        } else if (argument == "--score-filter-max") {
+            track_option("--score-filter-max").score_filter_max =
+                std::stod(value("--score-filter-max"));
+        } else if (argument == "--score-opacity") {
+            track_option("--score-opacity").score_opacity =
+                parse_pair(value("--score-opacity"), "--score-opacity");
+        } else if (argument == "--score-line-width") {
+            track_option("--score-line-width").score_line_width =
+                parse_pair(value("--score-line-width"), "--score-line-width");
+        } else if (argument == "--score-size") {
+            track_option("--score-size").score_size =
+                parse_pair(value("--score-size"), "--score-size");
         } else if (argument == "--track-height") {
             track_option("--track-height").height = std::stod(value("--track-height"));
         } else {
@@ -724,13 +860,29 @@ struct LoadedSource {
     PairFeatureSourcePtr pairs;
 };
 
-LoadedSource load(const TrackSpec& spec) {
+LoadedSource load(const TrackSpec& spec, const MatrixSourcePtr& matrix) {
     LoadedSource loaded;
     if (spec.kind == TrackKind::signal) {
         auto source = IgvSignalSource::open(spec.path);
         source->fill_empty(0.0);
         if (spec.aggregate.has_value()) source->aggregation(parse_aggregation(*spec.aggregate));
         loaded.signal = std::make_shared<CachingSignalSource>(source);
+    } else if (spec.kind == TrackKind::virtual4c) {
+        auto source = Virtual4CSource::make(matrix, *spec.viewpoint);
+        if (spec.aggregate.has_value()) {
+            const std::string aggregation = lower(*spec.aggregate);
+            if (aggregation == "mean" || aggregation == "avg") {
+                source->aggregation(Virtual4CSource::Aggregation::mean);
+            } else if (aggregation == "sum") {
+                source->aggregation(Virtual4CSource::Aggregation::sum);
+            } else if (aggregation == "max") {
+                source->aggregation(Virtual4CSource::Aggregation::maximum);
+            } else {
+                throw Error(ErrorCode::invalid_argument,
+                            "virtual 4C aggregation wants mean, sum, or max");
+            }
+        }
+        loaded.signal = source;
     } else if (spec.kind == TrackKind::bedpe) {
         loaded.pairs = BedpeSource::open(spec.path);
     } else {
@@ -743,9 +895,15 @@ LoadedSource load(const TrackSpec& spec) {
 // layout, so they drop the bits that only make sense across a wide row.
 std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& source,
                                    bool vertical) {
-    const std::string name = spec.name.value_or(stem(spec.path));
+    const std::string default_name =
+        spec.kind == TrackKind::virtual4c
+            ? std::string("virtual 4C (") + format_region(spec.viewpoint->chrom,
+                                                          spec.viewpoint->start,
+                                                          spec.viewpoint->end) + ")"
+            : stem(spec.path);
+    const std::string name = spec.name.value_or(default_name);
 
-    if (spec.kind == TrackKind::signal) {
+    if (spec.kind == TrackKind::signal || spec.kind == TrackKind::virtual4c) {
         auto track = std::make_unique<SignalTrack>(source.signal);
         track->name(name);
         track->style(spec.style.has_value() ? parse_style(*spec.style) : SignalStyle::area);
@@ -808,11 +966,33 @@ PairAnnotationLayer build_annotation(const TrackSpec& spec, const LoadedSource& 
     if (!spec.dash.empty()) layer.dash(spec.dash);
     if (spec.expansion > 0) layer.expand(spec.expansion);
     layer.show_labels(spec.labels.value_or(false));
+    if (spec.score_filter_min.has_value() || spec.score_filter_max.has_value()) {
+        layer.score_filter(spec.score_filter_min, spec.score_filter_max);
+    }
+    if (spec.colormap.has_value()) {
+        ValueScale score_scale;
+        if (spec.minimum.has_value()) score_scale.min(*spec.minimum);
+        if (spec.maximum.has_value()) score_scale.max(*spec.maximum);
+        if (spec.percentile.has_value()) score_scale.upper_percentile(*spec.percentile);
+        layer.color_by_score(*spec.colormap, score_scale);
+    }
+    if (spec.score_opacity.has_value()) {
+        layer.opacity_by_score(spec.score_opacity->first, spec.score_opacity->second);
+    }
+    if (spec.score_line_width.has_value()) {
+        layer.line_width_by_score(spec.score_line_width->first,
+                                  spec.score_line_width->second);
+    }
+    if (spec.score_size.has_value()) {
+        layer.size_by_score(spec.score_size->first, spec.score_size->second);
+    }
     return layer;
 }
 
 std::unique_ptr<HeatmapTrack> build_map(const Options& options, const MatrixSourcePtr& source,
-                                        const MatrixSourcePtr& comparison, HeatmapMode mode) {
+                                        const MatrixSourcePtr& comparison, HeatmapMode mode,
+                                        const HeatmapScaleGroupPtr& shared_scale = nullptr,
+                                        const HeatmapScaleGroupPtr& shared_comparison_scale = nullptr) {
     auto map = std::make_unique<HeatmapTrack>(source);
     map->name("Hi-C");
     map->mode(mode);
@@ -837,6 +1017,7 @@ std::unique_ptr<HeatmapTrack> build_map(const Options& options, const MatrixSour
         scale.upper_percentile(options.map_percentile.value_or(0.99));
     }
     map->scale(scale);
+    if (shared_scale != nullptr) map->shared_scale(shared_scale);
 
     if (comparison != nullptr) {
         map->compare_with(comparison, options.comparison_half);
@@ -855,6 +1036,9 @@ std::unique_ptr<HeatmapTrack> build_map(const Options& options, const MatrixSour
             comparison_scale.upper_percentile(options.comparison_percentile.value_or(0.99));
         }
         map->comparison_scale(comparison_scale);
+        if (shared_comparison_scale != nullptr) {
+            map->shared_comparison_scale(shared_comparison_scale);
+        }
     }
     return map;
 }
@@ -914,10 +1098,18 @@ int main(int argc, char** argv) {
             comparison = comparison_straw;
         }
 
-        if (options.region.chrom.empty()) options.region = default_region(*matrix);
-        std::printf("region: %s\n", format_region(options.region.chrom, options.region.start,
-                                                  options.region.end)
-                                        .c_str());
+        if (options.panels.front().region.chrom.empty()) {
+            options.panels.front().region = default_region(*matrix);
+        }
+        for (std::size_t p = 0; p < options.panels.size(); ++p) {
+            const GenomicRegion& region = options.panels[p].region;
+            if (region.chrom.empty()) {
+                throw Error(ErrorCode::invalid_argument,
+                            "panel " + std::to_string(p + 1) + " has no region");
+            }
+            std::printf("panel %zu: %s\n", p + 1,
+                        format_region(region.chrom, region.start, region.end).c_str());
+        }
 
         const bool square = options.layout == "square";
         const bool rectangle = options.layout == "rectangle" || options.layout == "rect";
@@ -938,104 +1130,136 @@ int main(int argc, char** argv) {
         const double width = options.width_inches > 0.0 ? inches(options.width_inches)
                                                         : inches(square ? 7.5 : 7.0);
         figure.set_size(width, options.height_inches > 0.0 ? inches(options.height_inches) : 0.0);
+        if (options.panel_spacing >= 0.0) figure.set_panel_spacing(options.panel_spacing);
         figure.set_title(options.has_title
                              ? options.title
-                             : format_region(options.region.chrom, options.region.start,
-                                             options.region.end));
+                             : options.panels.size() == 1
+                                   ? format_region(options.panels.front().region.chrom,
+                                                   options.panels.front().region.start,
+                                                   options.panels.front().region.end)
+                                   : basename(options.hic_path));
         figure.set_subtitle(options.has_subtitle
                                 ? options.subtitle
                                 : basename(options.hic_path) + "   " + straw.matrix_type + " / " +
                                       straw.normalization);
 
-        Panel& panel = figure.add_panel();
-        panel.set_region(options.region);
-        if (options.has_region_y) panel.set_region_y(options.region_y);
-        if (options.label_width >= 0.0) panel.set_label_width(options.label_width);
-        panel.set_show_grid(options.grid.value_or(!square));
-
         // One reader per file, shared by the horizontal and vertical view of it.
         std::vector<LoadedSource> sources;
         sources.reserve(options.tracks.size());
-        for (const TrackSpec& spec : options.tracks) sources.push_back(load(spec));
+        for (const TrackSpec& spec : options.tracks) sources.push_back(load(spec, matrix));
 
-        panel.add_track(AxisTrack{}.show_region(!square));
-        for (std::size_t i = 0; i < options.tracks.size(); ++i) {
-            const TrackSpec& spec = options.tracks[i];
-            if (spec.kind == TrackKind::bedpe) continue;
-            const bool on_x = spec.axis != TrackAxis::y || !square;
-            if (on_x) panel.add_track(build_track(spec, sources[i], /*vertical=*/false));
+        HeatmapScaleGroupPtr shared_primary;
+        HeatmapScaleGroupPtr shared_comparison;
+        if (options.shared_map_scale) {
+            shared_primary = std::make_shared<HeatmapScaleGroup>();
+            if (comparison != nullptr) {
+                shared_comparison = std::make_shared<HeatmapScaleGroup>();
+            }
         }
 
-        HeatmapTrack* map = nullptr;
-        if (square) {
-            panel.add_y_track(AxisTrack{}.position(AxisPosition::bottom).height(26.0));
+        std::vector<HeatmapTrack*> maps;
+        maps.reserve(options.panels.size());
+        for (std::size_t p = 0; p < options.panels.size(); ++p) {
+            const PanelSpec& panel_spec = options.panels[p];
+            Panel& panel = figure.add_panel();
+            panel.set_region(panel_spec.region);
+            if (panel_spec.has_region_y) panel.set_region_y(panel_spec.region_y);
+            if (options.label_width >= 0.0) panel.set_label_width(options.label_width);
+            panel.set_show_grid(options.grid.value_or(!square));
+            if (panel_spec.has_title) {
+                panel.set_title(panel_spec.title);
+            } else if (options.panels.size() > 1) {
+                panel.set_title(format_region(panel_spec.region.chrom, panel_spec.region.start,
+                                              panel_spec.region.end));
+            }
+
+            panel.add_track(AxisTrack{}.show_region(!square));
             for (std::size_t i = 0; i < options.tracks.size(); ++i) {
                 const TrackSpec& spec = options.tracks[i];
-                if (spec.kind == TrackKind::bedpe) continue;
-                if (spec.axis == TrackAxis::x) continue;
-                panel.add_y_track(build_track(spec, sources[i], /*vertical=*/true));
+                if (spec.panel_index != p || spec.kind == TrackKind::bedpe) continue;
+                const bool on_x = spec.axis != TrackAxis::y || !square;
+                if (on_x) panel.add_track(build_track(spec, sources[i], /*vertical=*/false));
             }
-            if (!options.no_map) {
-                map = static_cast<HeatmapTrack*>(
-                    &panel.set_matrix(build_map(options, matrix, comparison,
-                                                HeatmapMode::square)));
-            }
-            panel.add_bottom_track(AxisTrack{}.position(AxisPosition::bottom));
-        } else if (!options.no_map) {
-            const HeatmapMode mode =
-                rectangle ? HeatmapMode::rectangle : HeatmapMode::triangle;
-            map = static_cast<HeatmapTrack*>(
-                &panel.add_track(build_map(options, matrix, comparison, mode)));
-        }
 
-        if (map != nullptr) {
-            for (std::size_t i = 0; i < options.tracks.size(); ++i) {
-                if (options.tracks[i].kind == TrackKind::bedpe) {
-                    map->add_annotation(build_annotation(options.tracks[i], sources[i]));
+            HeatmapTrack* map = nullptr;
+            if (square) {
+                panel.add_y_track(AxisTrack{}.position(AxisPosition::bottom).height(26.0));
+                for (std::size_t i = 0; i < options.tracks.size(); ++i) {
+                    const TrackSpec& spec = options.tracks[i];
+                    if (spec.panel_index != p || spec.kind == TrackKind::bedpe ||
+                        spec.axis == TrackAxis::x) {
+                        continue;
+                    }
+                    panel.add_y_track(build_track(spec, sources[i], /*vertical=*/true));
                 }
-            }
-            for (const HighlightSpec& spec : options.highlights) {
-                MapHighlight highlight{spec.region, spec.axis};
-                highlight.fill(spec.fill)
-                    .border(spec.border, spec.line_width)
-                    .dash(spec.dash)
-                    .expand(spec.expansion);
-                map->add_highlight(std::move(highlight));
+                if (!options.no_map) {
+                    map = static_cast<HeatmapTrack*>(&panel.set_matrix(build_map(
+                        options, matrix, comparison, HeatmapMode::square, shared_primary,
+                        shared_comparison)));
+                }
+                panel.add_bottom_track(AxisTrack{}.position(AxisPosition::bottom));
+            } else if (!options.no_map) {
+                const HeatmapMode mode =
+                    rectangle ? HeatmapMode::rectangle : HeatmapMode::triangle;
+                map = static_cast<HeatmapTrack*>(&panel.add_track(build_map(
+                    options, matrix, comparison, mode, shared_primary, shared_comparison)));
             }
 
-            const std::string primary_title = options.oe ? "obs/exp"
-                                              : options.map_log.value_or(true)
-                                                  ? "contacts (log)"
-                                                  : "contacts";
-            if (comparison != nullptr) {
-                panel.add_bottom_track(
-                    ColorBarTrack{*map, HeatmapLayer::primary}
-                        .title(basename(options.hic_path) + " — " + primary_title)
-                        .align(BarAlign::left)
-                        .bar_length(110.0));
-                const std::string comparison_title =
-                    options.comparison_oe ? "obs/exp"
-                    : options.comparison_log.value_or(true) ? "contacts (log)"
-                                                            : "contacts";
-                panel.add_bottom_track(
-                    ColorBarTrack{*map, HeatmapLayer::comparison}
-                        .title(basename(options.comparison_path) + " — " + comparison_title)
-                        .align(BarAlign::right)
-                        .bar_length(110.0));
+            if (map != nullptr) {
+                maps.push_back(map);
+                for (std::size_t i = 0; i < options.tracks.size(); ++i) {
+                    if (options.tracks[i].panel_index == p &&
+                        options.tracks[i].kind == TrackKind::bedpe) {
+                        map->add_annotation(build_annotation(options.tracks[i], sources[i]));
+                    }
+                }
+                for (const HighlightSpec& spec : options.highlights) {
+                    if (spec.panel_index != p) continue;
+                    MapHighlight highlight{spec.region, spec.axis};
+                    highlight.fill(spec.fill)
+                        .border(spec.border, spec.line_width)
+                        .dash(spec.dash)
+                        .expand(spec.expansion);
+                    map->add_highlight(std::move(highlight));
+                }
+
+                const std::string primary_title = options.oe ? "obs/exp"
+                                                  : options.map_log.value_or(true)
+                                                      ? "contacts (log)"
+                                                      : "contacts";
+                if (comparison != nullptr) {
+                    panel.add_bottom_track(
+                        ColorBarTrack{*map, HeatmapLayer::primary}
+                            .title(basename(options.hic_path) + " — " + primary_title)
+                            .align(BarAlign::left)
+                            .bar_length(110.0));
+                    const std::string comparison_title =
+                        options.comparison_oe ? "obs/exp"
+                        : options.comparison_log.value_or(true) ? "contacts (log)"
+                                                                : "contacts";
+                    panel.add_bottom_track(
+                        ColorBarTrack{*map, HeatmapLayer::comparison}
+                            .title(basename(options.comparison_path) + " — " + comparison_title)
+                            .align(BarAlign::right)
+                            .bar_length(110.0));
+                } else {
+                    panel.add_bottom_track(ColorBarTrack{*map}
+                                               .title(primary_title)
+                                               .align(BarAlign::right)
+                                               .bar_length(110.0));
+                }
             } else {
-                panel.add_bottom_track(ColorBarTrack{*map}
-                                           .title(primary_title)
-                                           .align(BarAlign::right)
-                                           .bar_length(110.0));
-            }
-        } else {
-            const bool has_overlay = std::any_of(options.tracks.begin(), options.tracks.end(),
-                                                 [](const TrackSpec& spec) {
-                                                     return spec.kind == TrackKind::bedpe;
-                                                 });
-            if (has_overlay || !options.highlights.empty()) {
-                throw Error(ErrorCode::invalid_argument,
-                            "BEDPE overlays and highlights require a contact map");
+                const bool has_overlay = std::any_of(
+                    options.tracks.begin(), options.tracks.end(), [p](const TrackSpec& spec) {
+                        return spec.panel_index == p && spec.kind == TrackKind::bedpe;
+                    });
+                const bool has_highlight = std::any_of(
+                    options.highlights.begin(), options.highlights.end(),
+                    [p](const HighlightSpec& spec) { return spec.panel_index == p; });
+                if (has_overlay || has_highlight) {
+                    throw Error(ErrorCode::invalid_argument,
+                                "BEDPE overlays and highlights require a contact map");
+                }
             }
         }
 
@@ -1053,14 +1277,14 @@ int main(int argc, char** argv) {
             std::printf("wrote %s\n", path.c_str());
         }
 
-        if (map != nullptr) {
-            const MatrixData& data = map->data();
+        for (std::size_t p = 0; p < maps.size(); ++p) {
+            const MatrixData& data = maps[p]->data();
             std::size_t populated = 0;
             for (float v : data.values) {
                 if (std::isfinite(v) && v != 0.0F) ++populated;
             }
-            std::printf("map: %zu x %zu bins at %lld bp, %zu non-empty\n", data.width,
-                        data.height, static_cast<long long>(data.bin_size), populated);
+            std::printf("map %zu: %zu x %zu bins at %lld bp, %zu non-empty\n", p + 1,
+                        data.width, data.height, static_cast<long long>(data.bin_size), populated);
             if (populated == 0) {
                 std::fprintf(stderr, "warning: no contacts in this region\n");
             }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -20,6 +21,9 @@ struct ViewContext {
     // resolution the output can actually show.
     double device_scale{1.0};
     const Theme* theme{nullptr};
+    // Unique to one complete Figure layout/preparation pass. Shared resources
+    // use this to discard submissions from an earlier export or size query.
+    std::uint64_t preparation_id{0};
 
     // Number of bins that fit across the content at output resolution.
     [[nodiscard]] std::size_t target_bins() const noexcept {
@@ -48,6 +52,10 @@ public:
 
     // Data transformation only; no drawing state and no absolute positions.
     virtual void prepare(const ViewContext&) {}
+
+    // Called after every track in every panel has prepared. Most tracks need
+    // no second phase; coordinated tracks use it to resolve shared scales.
+    virtual void finalize_prepare() {}
 
     virtual void draw(Canvas& canvas, const TrackRect& rect) const = 0;
 

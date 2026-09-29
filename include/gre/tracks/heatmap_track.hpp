@@ -1,6 +1,10 @@
 #pragma once
 
 #include <deque>
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
 
 #include "gre/core/color.hpp"
 #include "gre/core/scale.hpp"
@@ -24,6 +28,30 @@ enum class HeatmapMode {
 
 enum class MatrixHalf { above, below };
 
+// Fits one value scale over several heatmaps. Attach the same group to maps in
+// different panels to make their colours quantitatively comparable.
+class HeatmapScaleGroup {
+public:
+    HeatmapScaleGroup() = default;
+    explicit HeatmapScaleGroup(ValueScale scale)
+        : template_scale_(scale), scale_(std::move(scale)), have_scale_(true) {}
+
+    void submit(std::uint64_t preparation_id, const ValueScale& requested,
+                const float* values, std::size_t count);
+    void finalize(std::uint64_t preparation_id);
+    [[nodiscard]] const ValueScale& scale() const noexcept { return scale_; }
+
+private:
+    std::uint64_t preparation_id_{0};
+    std::optional<ValueScale> template_scale_;
+    ValueScale scale_;
+    bool have_scale_{false};
+    bool finalized_{false};
+    std::vector<float> values_;
+};
+
+using HeatmapScaleGroupPtr = std::shared_ptr<HeatmapScaleGroup>;
+
 // Dense contact data.  Values are normalised, looked up in a colour table and
 // written straight into an RGBA image, which the backends then draw as one
 // raster -- never as per-cell rectangles.
@@ -42,6 +70,7 @@ public:
     // maximum; contact matrices have a long tail that otherwise washes the
     // whole map out.  Defaults to 0.99.
     HeatmapTrack& upper_percentile(double value);
+    HeatmapTrack& shared_scale(HeatmapScaleGroupPtr group);
 
     // Square mode: draw a second matrix in one half of the map. The primary
     // source occupies the other half and each source has its own colour scale.
@@ -52,6 +81,7 @@ public:
     HeatmapTrack& comparison_limits(double low, double high);
     HeatmapTrack& comparison_log_scale(bool value);
     HeatmapTrack& comparison_upper_percentile(double value);
+    HeatmapTrack& shared_comparison_scale(HeatmapScaleGroupPtr group);
 
     // Triangle mode: how far from the diagonal to show.  0 means the whole
     // region.
@@ -68,6 +98,7 @@ public:
     MapHighlight& add_highlight(MapHighlight highlight);
 
     void prepare(const ViewContext& context) override;
+    void finalize_prepare() override;
     void draw(Canvas& canvas, const TrackRect& rect) const override;
 
     [[nodiscard]] const ValueScale& value_scale() const noexcept { return scale_; }
@@ -101,12 +132,16 @@ private:
     ColorMap colors_;
     bool colors_set_{false};
     ValueScale scale_;
+    ValueScale scale_policy_;
+    HeatmapScaleGroupPtr shared_scale_;
     MatrixSourcePtr comparison_source_;
     MatrixData comparison_data_;
     MatrixHalf comparison_half_{MatrixHalf::below};
     ColorMap comparison_colors_;
     bool comparison_colors_set_{false};
     ValueScale comparison_scale_;
+    ValueScale comparison_scale_policy_;
+    HeatmapScaleGroupPtr shared_comparison_scale_;
     std::int64_t max_distance_{0};
     bool square_aspect_{true};
     bool show_diagonal_{false};

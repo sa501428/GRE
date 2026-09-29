@@ -100,17 +100,56 @@ void paint_shape(Canvas& canvas, const std::vector<Point>& points, Color fill,
 
 }  // namespace
 
+void HeatmapScaleGroup::submit(std::uint64_t preparation_id, const ValueScale& requested,
+                               const float* values, std::size_t count) {
+    if (preparation_id_ != preparation_id) {
+        preparation_id_ = preparation_id;
+        values_.clear();
+        finalized_ = false;
+        have_scale_ = template_scale_.has_value();
+        if (template_scale_.has_value()) scale_ = *template_scale_;
+    }
+    if (!have_scale_) {
+        scale_ = requested;
+        have_scale_ = true;
+    }
+    if (values == nullptr) return;
+    values_.reserve(values_.size() + count);
+    for (std::size_t i = 0; i < count; ++i) {
+        if (std::isfinite(values[i])) values_.push_back(values[i]);
+    }
+}
+
+void HeatmapScaleGroup::finalize(std::uint64_t preparation_id) {
+    if (preparation_id_ != preparation_id || finalized_) return;
+    finalized_ = true;
+    if (!have_scale_) return;
+    ValueScale fitted = scale_;
+    if ((fitted.auto_min() || fitted.auto_max()) &&
+        !fitted.fit(values_.data(), values_.size())) {
+        fitted.limits(0.0, 1.0);
+    } else if (scale_.auto_min() && fitted.min() > 0.0 &&
+               fitted.type() != ScaleType::symlog) {
+        fitted.min(0.0);
+    }
+    scale_ = fitted;
+}
+
 HeatmapTrack::HeatmapTrack(MatrixSourcePtr source) : source_(std::move(source)) {
     if (source_ == nullptr) {
         throw Error(ErrorCode::invalid_argument, "HeatmapTrack needs a matrix source");
     }
     scale_.upper_percentile(0.99);
+    scale_policy_.upper_percentile(0.99);
     comparison_scale_.upper_percentile(0.99);
+    comparison_scale_policy_.upper_percentile(0.99);
 }
 
 HeatmapTrack::HeatmapTrack(MatrixData data) : data_(std::move(data)), have_data_(true) {
     scale_.upper_percentile(0.99);
+    scale_policy_.upper_percentile(0.99);
     comparison_scale_.upper_percentile(0.99);
+    comparison_scale_policy_.upper_percentile(0.99);
 }
 
 HeatmapTrack& HeatmapTrack::mode(HeatmapMode value) {
@@ -129,22 +168,31 @@ HeatmapTrack& HeatmapTrack::colors(const std::string& name) {
 }
 
 HeatmapTrack& HeatmapTrack::scale(ValueScale value) {
+    scale_policy_ = value;
     scale_ = std::move(value);
     return *this;
 }
 
 HeatmapTrack& HeatmapTrack::limits(double low, double high) {
+    scale_policy_.limits(low, high);
     scale_.limits(low, high);
     return *this;
 }
 
 HeatmapTrack& HeatmapTrack::log_scale(bool value) {
+    scale_policy_.type(value ? ScaleType::log1p : ScaleType::linear);
     scale_.type(value ? ScaleType::log1p : ScaleType::linear);
     return *this;
 }
 
 HeatmapTrack& HeatmapTrack::upper_percentile(double value) {
+    scale_policy_.upper_percentile(std::clamp(value, 0.0, 1.0));
     scale_.upper_percentile(std::clamp(value, 0.0, 1.0));
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::shared_scale(HeatmapScaleGroupPtr group) {
+    shared_scale_ = std::move(group);
     return *this;
 }
 
@@ -168,22 +216,31 @@ HeatmapTrack& HeatmapTrack::comparison_colors(const std::string& name) {
 }
 
 HeatmapTrack& HeatmapTrack::comparison_scale(ValueScale value) {
+    comparison_scale_policy_ = value;
     comparison_scale_ = std::move(value);
     return *this;
 }
 
 HeatmapTrack& HeatmapTrack::comparison_limits(double low, double high) {
+    comparison_scale_policy_.limits(low, high);
     comparison_scale_.limits(low, high);
     return *this;
 }
 
 HeatmapTrack& HeatmapTrack::comparison_log_scale(bool value) {
+    comparison_scale_policy_.type(value ? ScaleType::log1p : ScaleType::linear);
     comparison_scale_.type(value ? ScaleType::log1p : ScaleType::linear);
     return *this;
 }
 
 HeatmapTrack& HeatmapTrack::comparison_upper_percentile(double value) {
+    comparison_scale_policy_.upper_percentile(std::clamp(value, 0.0, 1.0));
     comparison_scale_.upper_percentile(std::clamp(value, 0.0, 1.0));
+    return *this;
+}
+
+HeatmapTrack& HeatmapTrack::shared_comparison_scale(HeatmapScaleGroupPtr group) {
+    shared_comparison_scale_ = std::move(group);
     return *this;
 }
 
@@ -237,6 +294,9 @@ double HeatmapTrack::default_height() const {
 
 void HeatmapTrack::prepare(const ViewContext& context) {
     capture_view(context);
+    image_ = Image{};
+    scale_ = scale_policy_;
+    comparison_scale_ = comparison_scale_policy_;
     if (!colors_set_ && context.theme != nullptr) colors_ = context.theme->heatmap_colors;
     if (!comparison_colors_set_) comparison_colors_ = colors_;
     if (comparison_source_ != nullptr && mode_ != HeatmapMode::square) {
@@ -298,7 +358,10 @@ void HeatmapTrack::prepare(const ViewContext& context) {
                                                      target_width, target_height);
     }
 
-    if (scale_.auto_min() || scale_.auto_max()) {
+    if (shared_scale_ != nullptr) {
+        shared_scale_->submit(context.preparation_id, scale_, data_.values.data(),
+                              data_.values.size());
+    } else if (scale_.auto_min() || scale_.auto_max()) {
         ValueScale fitted = scale_;
         if (fitted.fit(data_.values.data(), data_.values.size())) {
             if (scale_.auto_min() && fitted.min() > 0.0 &&
@@ -312,7 +375,11 @@ void HeatmapTrack::prepare(const ViewContext& context) {
         }
     }
 
-    if (comparison_source_ != nullptr && comparison_data_.empty()) {
+    if (shared_comparison_scale_ != nullptr && !comparison_data_.empty()) {
+        shared_comparison_scale_->submit(context.preparation_id, comparison_scale_,
+                                         comparison_data_.values.data(),
+                                         comparison_data_.values.size());
+    } else if (comparison_source_ != nullptr && comparison_data_.empty()) {
         comparison_scale_.limits(0.0, 1.0);
     } else if (!comparison_data_.empty() &&
                (comparison_scale_.auto_min() || comparison_scale_.auto_max())) {
@@ -332,10 +399,31 @@ void HeatmapTrack::prepare(const ViewContext& context) {
         annotation.prepare(x_region, y_region);
     }
 
-    if (mode_ == HeatmapMode::triangle) {
-        build_triangle_image(context.device_scale);
-    } else {
-        build_square_image();
+    if (shared_scale_ == nullptr && shared_comparison_scale_ == nullptr) {
+        if (mode_ == HeatmapMode::triangle) {
+            build_triangle_image(context.device_scale);
+        } else {
+            build_square_image();
+        }
+    }
+}
+
+void HeatmapTrack::finalize_prepare() {
+    if (!have_data_ || data_.empty()) return;
+    if (shared_scale_ != nullptr) {
+        shared_scale_->finalize(view().preparation_id);
+        scale_ = shared_scale_->scale();
+    }
+    if (shared_comparison_scale_ != nullptr && !comparison_data_.empty()) {
+        shared_comparison_scale_->finalize(view().preparation_id);
+        comparison_scale_ = shared_comparison_scale_->scale();
+    }
+    if (shared_scale_ != nullptr || shared_comparison_scale_ != nullptr) {
+        if (mode_ == HeatmapMode::triangle) {
+            build_triangle_image(view().device_scale);
+        } else {
+            build_square_image();
+        }
     }
 }
 
@@ -527,7 +615,12 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
             GenomicRegion first = expanded(feature.first, layer.expansion());
             GenomicRegion second = expanded(feature.second, layer.expansion());
             StrokeStyle stroke = base_stroke;
-            stroke.color = feature.color.value_or(layer.color());
+            stroke.color = layer.color_for(feature);
+            stroke.width = layer.line_width_for(feature);
+            const Color feature_fill = layer.fill_for(feature);
+            const double feature_size = layer.size_for(feature);
+            TextStyle feature_label_style = label_style;
+            feature_label_style.color = stroke.color;
 
             if (mode_ == HeatmapMode::triangle) {
                 if (layer.side() == AnnotationSide::below ||
@@ -557,24 +650,24 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
                                       1.0) *
                                  rect.content.height},
                     };
-                    paint_shape(canvas, triangle, layer.fill(), stroke);
+                    paint_shape(canvas, triangle, feature_fill, stroke);
                     label_box = Rect::from_edges(rect.x.x(start), rect.content.top(),
                                                  rect.x.x(end), triangle.back().y);
                 } else {
-                    const double width = std::max(
+                    const double width = feature_size * std::max(
                         4.0, std::fabs(rect.x.width_of(first.span() + second.span()) / 2.0));
                     const double height = std::max(4.0, width * 0.65);
                     label_box = Rect{x - width / 2.0, y - height / 2.0, width, height};
                     if (layer.style() == PairAnnotationStyle::loop) {
-                        paint_shape(canvas, ellipse_points(label_box), layer.fill(), stroke);
+                        paint_shape(canvas, ellipse_points(label_box), feature_fill, stroke);
                     } else {
-                        if (!layer.fill().transparent()) canvas.fill_rect(label_box, layer.fill());
+                        if (!feature_fill.transparent()) canvas.fill_rect(label_box, feature_fill);
                         canvas.stroke_rect(label_box, stroke);
                     }
                 }
                 if (layer.labels_visible() && !feature.name.empty()) {
                     canvas.draw_text(Point{label_box.right() + 2.0, label_box.top()}, feature.name,
-                                     label_style);
+                                     feature_label_style);
                 }
                 continue;
             }
@@ -600,7 +693,7 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
                                     {rect.x.x(start), rect.y.x(end)},
                                     {rect.x.x(end), rect.y.x(end)}};
                     }
-                    paint_shape(canvas, triangle, layer.fill(), stroke);
+                    paint_shape(canvas, triangle, feature_fill, stroke);
                     label_box = visible_box(rect.x, rect.y,
                                             GenomicRegion{first.chrom,
                                                           static_cast<std::int64_t>(start),
@@ -610,16 +703,22 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
                                                           static_cast<std::int64_t>(end)});
                 } else {
                     label_box = visible_box(rect.x, rect.y, xr, yr);
+                    if (feature_size != 1.0) {
+                        const double width = label_box.width * feature_size;
+                        const double height = label_box.height * feature_size;
+                        label_box = Rect{label_box.center_x() - width / 2.0,
+                                         label_box.center_y() - height / 2.0, width, height};
+                    }
                     if (layer.style() == PairAnnotationStyle::loop) {
-                        paint_shape(canvas, ellipse_points(label_box), layer.fill(), stroke);
+                        paint_shape(canvas, ellipse_points(label_box), feature_fill, stroke);
                     } else {
-                        if (!layer.fill().transparent()) canvas.fill_rect(label_box, layer.fill());
+                        if (!feature_fill.transparent()) canvas.fill_rect(label_box, feature_fill);
                         canvas.stroke_rect(label_box, stroke);
                     }
                 }
                 if (layer.labels_visible() && !feature.name.empty()) {
                     canvas.draw_text(Point{label_box.right() + 2.0, label_box.top()}, feature.name,
-                                     label_style);
+                                     feature_label_style);
                 }
             };
 

@@ -27,6 +27,7 @@
 #include "gre/data/pair_source.hpp"
 #include "gre/data/signal_source.hpp"
 #include "gre/data/straw_matrix_source.hpp"
+#include "gre/data/virtual4c_source.hpp"
 
 #include "gre/figure/figure.hpp"
 #include "gre/figure/panel.hpp"

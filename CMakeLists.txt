@@ -70,6 +70,7 @@ add_library(gre
     src/tracks/legend_track.cpp
     src/data/memory_sources.cpp
     src/data/pair_source.cpp
+    src/data/virtual4c_source.cpp
     src/data/straw_matrix_source.cpp
     src/data/igv_sources.cpp
     src/export/png.cpp
