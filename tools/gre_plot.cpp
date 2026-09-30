@@ -63,6 +63,7 @@ struct TrackSpec {
     std::optional<std::string> aggregate;
     bool log{false};
     bool y_axis{false};
+    bool representative_transcripts{false};
 
     AnnotationSide annotation_side{AnnotationSide::both};
     std::optional<Color> fill;
@@ -426,6 +427,7 @@ void print_usage(const char* program) {
         "  --colormap NAME          colour intervals by score\n"
         "  --labels / --no-labels   show or hide names\n"
         "  --row-height PT          gene track row pitch\n"
+        "  --representative-transcripts  longest transcript per gene name\n"
         "  --type signal|gene|interval|bedpe   override the extension guess\n"
         "  --axis x|y|both          square layout: which axis (default x)\n"
         "  --side above|below|both  BEDPE placement (default both)\n"
@@ -790,6 +792,8 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             track_option("--labels").labels = true;
         } else if (argument == "--row-height") {
             track_option("--row-height").row_height = std::stod(value("--row-height"));
+        } else if (argument == "--representative-transcripts") {
+            track_option("--representative-transcripts").representative_transcripts = true;
         } else if (argument == "--type") {
             const std::string kind = lower(value("--type"));
             TrackSpec& spec = track_option("--type");
@@ -979,6 +983,7 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
         if (spec.color.has_value()) track->color(*spec.color);
         if (spec.height.has_value()) track->height(*spec.height);
         if (spec.row_height.has_value()) track->row_height(*spec.row_height);
+        track->representative_transcripts(spec.representative_transcripts);
         // Gene names need a wide row; in a narrow turned column they only
         // collide, so they are off there unless asked for.
         track->show_labels(spec.labels.value_or(!vertical));
@@ -1291,7 +1296,7 @@ int main(int argc, char** argv) {
                     panel.add_bottom_track(
                         ColorBarTrack{*map, HeatmapLayer::comparison}
                             .title(basename(options.comparison_path) + " — " + comparison_title)
-                            .align(BarAlign::right)
+                            .align(BarAlign::left)
                             .bar_length(110.0));
                 } else {
                     panel.add_bottom_track(ColorBarTrack{*map}
@@ -1341,7 +1346,9 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "warning: no contacts in this region\n");
             }
         }
-        const Size size = figure.computed_size();
+        const Size size = figure.last_rendered_size().has_value()
+                              ? *figure.last_rendered_size()
+                              : figure.computed_size();
         std::printf("page: %.0f x %.0f pt\n", size.width, size.height);
     } catch (const std::exception& error) {
         std::fprintf(stderr, "error: %s\n", error.what());

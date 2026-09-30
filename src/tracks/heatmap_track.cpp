@@ -645,19 +645,25 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
 
                 Rect label_box;
                 if (layer.style() == PairAnnotationStyle::domain) {
-                    const std::vector<Point> triangle = {
-                        {rect.x.x(start), rect.content.top()},
-                        {rect.x.x(end), rect.content.top()},
-                        {rect.x.x((start + end) / 2.0),
-                         rect.content.top() +
-                             std::min((end - start) /
-                                          std::max<double>(shown_distance_, 1.0),
-                                      1.0) *
-                                 rect.content.height},
-                    };
-                    paint_shape(canvas, triangle, feature_fill, stroke);
+                    const Point left{rect.x.x(start), rect.content.top()};
+                    const Point right{rect.x.x(end), rect.content.top()};
+                    const Point apex{rect.x.x((start + end) / 2.0),
+                                     rect.content.top() +
+                                         (end - start) /
+                                             std::max<double>(shown_distance_, 1.0) *
+                                             rect.content.height};
+                    // The top edge follows the main Hi-C diagonal. Only draw
+                    // the two domain legs, even for clipped large domains.
+                    if (!feature_fill.transparent()) {
+                        const Point fill_points[] = {left, right, apex};
+                        canvas.fill_polygon(fill_points, feature_fill);
+                    }
+                    if (!stroke.color.transparent()) {
+                        const Point leg_points[] = {left, apex, right};
+                        canvas.stroke_polyline(leg_points, stroke);
+                    }
                     label_box = Rect::from_edges(rect.x.x(start), rect.content.top(),
-                                                 rect.x.x(end), triangle.back().y);
+                                                 rect.x.x(end), apex.y);
                 } else {
                     const double width = feature_size * std::max(
                         4.0, std::fabs(rect.x.width_of(first.span() + second.span()) / 2.0));

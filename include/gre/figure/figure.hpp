@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,9 @@ public:
 
     // Resolves automatic height by running layout at the given output scale.
     [[nodiscard]] Size computed_size(double device_scale = 300.0 / kPointsPerInch);
+    [[nodiscard]] std::optional<Size> last_rendered_size() const noexcept {
+        return last_rendered_size_;
+    }
 
     // Lays out, prepares every track and draws.  The same call serves every
     // backend.
@@ -100,6 +104,7 @@ private:
     bool background_set_{false};
     double panel_spacing_{-1.0};
     std::vector<std::unique_ptr<Panel>> panels_;
+    std::optional<Size> last_rendered_size_;
 };
 
 }  // namespace gre

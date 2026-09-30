@@ -6,13 +6,17 @@ bigBed files are also queried remotely. Compressed BEDPE and GTF files are
 streamed directly and held in memory for the duration of a render.
 No ENCODE input needs to be downloaded or checked into this repository.
 
-The committed PNGs were generated at 300 DPI with linear contact scales:
+The committed PNGs use linear contact scales and are generated at 300 DPI,
+except figures 5 and 9 at 500 DPI:
 
 ```bash
 ./examples/gallery/generate.sh
 ```
 
-Set `GRE_PLOT` to use a different executable or `OUT_DIR` to write elsewhere:
+Set `GRE_PLOT` to use a different executable or `OUT_DIR` to write elsewhere.
+The generator runs two independent figures at once by default; set
+`GALLERY_JOBS=1` for sequential renders. Set `GALLERY_ONLY=06` to rebuild
+just figure 6 (comma-separated figure numbers are also accepted):
 
 ```bash
 GRE_PLOT=/path/to/gre_plot OUT_DIR=/tmp/gre-gallery \
@@ -31,7 +35,7 @@ All coordinates use GRCh38.
 | accession | role | format | ENCODE record | direct URL |
 |---|---|---|---|---|
 | `ENCFF621AIY` | K562 mapQ30 contact matrix | hic | [record](https://www.encodeproject.org/files/ENCFF621AIY/) | [download/range source](https://www.encodeproject.org/files/ENCFF621AIY/@@download/ENCFF621AIY.hic) |
-| `ENCFF725EXS` | K562 all-contact matrix from the same intact experiment | hic | [record](https://www.encodeproject.org/files/ENCFF725EXS/) | [download/range source](https://www.encodeproject.org/files/ENCFF725EXS/@@download/ENCFF725EXS.hic) |
+| `ENCFF070CHZ` | GM12878 intact Hi-C mapQ30 contact matrix for comparison | hic | [record](https://www.encodeproject.org/files/ENCFF070CHZ/) | [download/range source](https://www.encodeproject.org/files/ENCFF070CHZ/@@download/ENCFF070CHZ.hic) |
 | `ENCFF944MHS` | K562 5 kb compartment eigenvector | bigWig | [record](https://www.encodeproject.org/files/ENCFF944MHS/) | [download/range source](https://www.encodeproject.org/files/ENCFF944MHS/@@download/ENCFF944MHS.bigWig) |
 | `ENCFF256ZMD` | K562 mapQ30 loops | BEDPE.gz | [record](https://www.encodeproject.org/files/ENCFF256ZMD/) | [stream source](https://www.encodeproject.org/files/ENCFF256ZMD/@@download/ENCFF256ZMD.bedpe.gz) |
 | `ENCFF126GED` | K562 mapQ30 5 kb contact domains | BEDPE.gz | [record](https://www.encodeproject.org/files/ENCFF126GED/) | [stream source](https://www.encodeproject.org/files/ENCFF126GED/@@download/ENCFF126GED.bedpe.gz) |
@@ -42,7 +46,7 @@ All coordinates use GRCh38.
 | `ENCFF336UPT` | K562 CTCF ChIP-seq signal p-value | bigWig | [record](https://www.encodeproject.org/files/ENCFF336UPT/) | [download/range source](https://www.encodeproject.org/files/ENCFF336UPT/@@download/ENCFF336UPT.bigWig) |
 | `ENCFF688NNQ` | K562 transcript models, GENCODE V29-based | GTF.gz | [record](https://www.encodeproject.org/files/ENCFF688NNQ/) | [stream source](https://www.encodeproject.org/files/ENCFF688NNQ/@@download/ENCFF688NNQ.gtf.gz) |
 
-The Hi-C, compartment, loop, and domain files belong to released K562 intact
+The K562 Hi-C, compartment, loop, and domain files belong to released intact
 Hi-C experiment [ENCSR479XDG](https://www.encodeproject.org/experiments/ENCSR479XDG/).
 The H3K27ac peaks belong to released K562 Histone ChIP-seq experiment
 [ENCSR000AKP](https://www.encodeproject.org/experiments/ENCSR000AKP/).
@@ -58,7 +62,7 @@ does:
 
 ```bash
 HIC='https://www.encodeproject.org/files/ENCFF621AIY/@@download/ENCFF621AIY.hic'
-HIC_ALL='https://www.encodeproject.org/files/ENCFF725EXS/@@download/ENCFF725EXS.hic'
+GM12878_HIC='https://www.encodeproject.org/files/ENCFF070CHZ/@@download/ENCFF070CHZ.hic'
 COMPARTMENTS='https://www.encodeproject.org/files/ENCFF944MHS/@@download/ENCFF944MHS.bigWig'
 LOOPS='https://www.encodeproject.org/files/ENCFF256ZMD/@@download/ENCFF256ZMD.bedpe.gz'
 DOMAINS='https://www.encodeproject.org/files/ENCFF126GED/@@download/ENCFF126GED.bedpe.gz'
@@ -75,13 +79,13 @@ GRE_PLOT='./build/tools/gre_plot'
 
 This example combines a distance-limited triangular map with a signed
 compartment signal, H3K27ac peak intervals, promoter annotations, supplied
-contact domains, and a small set of supplied loops. Their markers use one
-muted colour and a fixed small size so the contact map remains legible.
+contact domains and supplied loops. Cyan domain legs avoid the map diagonal,
+and the linear color scale ends at 100 contacts.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout pyramid --norm SCALE --resolution 25000 --max-distance 1200000 \
-  --map-linear --map-colors fall --map-percentile 0.90 \
+  --map-linear --map-colors fall --map-max 100 \
   --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 — MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 28 --style area \
@@ -89,8 +93,8 @@ muted colour and a fixed small size so the contact map remains legible.
   "$H3K27AC_PEAKS" --type interval --name 'H3K27ac peaks' --height 24 \
     --color '#D95F02' --no-labels \
   "$PROMOTERS" --name 'GENCODE v47 promoters' --height 36 --no-labels \
-  "$DOMAINS" --style domain --side above --color '#6D5A80' \
-    --fill '#998EC320' \
+  "$DOMAINS" --style domain --side above --color '#00BFD8' \
+    --fill '#00BFD814' \
   "$LOOPS" --style loop --side above --color '#4D5563' \
     --score-filter-min 50 --line-width 0.65 --score-size 0.55,0.55 \
   --out "examples/gallery/generated/01_pyramid_tracks"
@@ -98,12 +102,12 @@ muted colour and a fixed small size so the contact map remains legible.
 
 ![Pyramid contact map with ENCODE compartment, H3K27ac, promoter, domain, and loop tracks](generated/01_pyramid_tracks.png)
 
-## 2. Rich square map with both-axis signal and virtual 4C
+## 2. Square map with both-axis signal and 2D annotations
 
 The same compartment bigWig appears above and to the left of the square map.
-A direct virtual 4C profile is extracted from the `.hic`, and its viewpoint is
-marked by a translucent vertical band. Domains and small, uniform loop markers
-are restricted to the upper triangle.
+A translucent vertical band marks a viewpoint. Yellow domain legs and small,
+cyan loop markers are restricted to the upper triangle. All calls in the
+matching mapQ30 loop BEDPE are shown without an extra score cutoff.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
@@ -113,38 +117,35 @@ are restricted to the upper triangle.
   --title 'K562 — square map with 1D and 2D annotation' \
   "$COMPARTMENTS" --name 'PC1' --axis both --height 28 \
     --style area --color '#B2182B' --neg-color '#2166AC' \
-  --virtual4c chr8:127700000-127750000 --name 'virtual 4C' --axis x \
-    --style line --height 34 --color '#008837' --line-width 1.4 \
-  "$DOMAINS" --style domain --side above --color '#6D5A80' \
-    --fill '#998EC320' --line-width 0.75 \
-  "$LOOPS" --style loop --side above --color '#59636F' \
-    --score-filter-min 50 --line-width 0.6 --score-size 0.5,0.5 \
+  "$DOMAINS" --style domain --side above --color '#F5D547' \
+    --fill '#F5D54714' --line-width 0.9 \
+  "$LOOPS" --style loop --side above --color '#00BFD8' \
+    --line-width 0.8 --score-size 0.5,0.5 \
   --v-highlight chr8:127700000-127750000 \
     --highlight-color '#00A06020' --highlight-border '#008837' \
   --out "examples/gallery/generated/02_square_rich_annotations"
 ```
 
-![Square Hi-C map with both-axis PC1, virtual 4C, domains, loops, and a viewpoint highlight](generated/02_square_rich_annotations.png)
+![Square Hi-C map with both-axis PC1, yellow domains, cyan loops, and a viewpoint highlight](generated/02_square_rich_annotations.png)
 
-## 3. VS mode: mapQ30 above, all contacts below
+## 3. VS mode: K562 above, GM12878 below
 
-Two contact matrices from the same intact Hi-C experiment show mapQ30 contacts
-above the diagonal and all contacts below. Both halves use linear scales, with
-separate colour maps and legends. Loop overlays are omitted to keep the
-comparison focused on the matrices.
+Two intact Hi-C mapQ30 matrices compare K562 above the diagonal with
+GM12878 below. Both halves use linear scales and have aligned legends. Loop
+overlays are omitted to keep the comparison focused on the matrices.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout square --norm SCALE --resolution 25000 \
   --map-colors reds --map-linear --map-percentile 0.90 \
-  --vs "$HIC_ALL" --vs-norm SCALE --vs-side below \
+  --vs "$GM12878_HIC" --vs-norm SCALE --vs-side below \
     --vs-map-colors blues --vs-map-linear --vs-map-percentile 0.90 \
   --width 7 --dpi 300 --formats png --theme publication \
-  --title 'K562 intact Hi-C — mapQ30 above, all contacts below' \
-  --diagonal --out "examples/gallery/generated/03_intact_mapq30_vs_all"
+  --title 'Intact Hi-C — K562 above, GM12878 below' \
+  --diagonal --out "examples/gallery/generated/03_k562_vs_gm12878"
 ```
 
-![Split square map of intact Hi-C mapQ30 contacts above and all contacts below](generated/03_intact_mapq30_vs_all.png)
+![Split square map of K562 and GM12878 intact Hi-C](generated/03_k562_vs_gm12878.png)
 
 ## 4. Three square panels with one fitted contact scale
 
@@ -179,15 +180,15 @@ are panel-scoped. Loop overlays are omitted here for a clearer comparison.
 ## 5. Dark off-diagonal rectangle
 
 Rectangle mode treats x and y as independent regions. This example displays a
-block away from the main diagonal, overlays oriented loop boxes, and projects
+square-shaped block away from the main diagonal, overlays oriented loop boxes, and projects
 separate supplied genomic intervals across x and y as cyan and yellow bands.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-128300000 \
   --layout rectangle --region-y chr8:128000000-130000000 \
-  --norm SCALE --resolution 10000 --map-height 260 --map-linear \
+  --norm SCALE --resolution 10000 --map-height 390 --map-linear \
   --map-colors magma --map-percentile 0.97 \
-  --width 7 --dpi 300 --formats png --theme dark \
+  --width 7 --dpi 500 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \
   "$LOOPS" --style box --fill '#FFFFFF12' --color '#B4BFC9' \
     --score-filter-min 60 --line-width 0.6 --score-size 0.7,0.7 \
@@ -205,30 +206,30 @@ separate supplied genomic intervals across x and y as cyan and yellow bands.
 The same ENCODE BEDPE loops can be represented as a separate one-dimensional
 arc track instead of markers on the matrix. Arc endpoint positions come
 directly from the supplied anchors; separation controls the base height, while
-the BEDPE score filters weaker calls. Arcs use one colour and retain their
-circular geometry. Longer arcs are painted first so short local loops remain
-visible.
+calls with a score of at least 20 are retained. Arcs use one colour,
+outline only, and retain their circular geometry. Longer arcs are painted
+first so short local loops remain visible.
 
 This example also demonstrates a true transcript-model row and two independent
 quantitative assays. H3K27ac is an orange filled area, ATAC-seq is a teal line,
 and the Hi-C matrix uses the sequential `blues` palette. Supplied domains remain
-a dashed 2D overlay on the contact map.
+a dashed 2D overlay on the full triangular contact map. One representative
+transcript per gene name keeps the gene track readable.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
-  --layout pyramid --norm SCALE --resolution 25000 --max-distance 700000 \
+  --layout pyramid --norm SCALE --resolution 25000 \
   --map-colors blues --map-linear --map-percentile 0.90 \
   --width 7 --label-width 110 --dpi 300 --formats png --theme publication \
   --title 'K562 — loops as arcs above a blue contact map' \
-  "$TRANSCRIPTS" --name 'K562 transcript models' --height 70 \
-    --row-height 13 --color '#1B7837' --no-labels \
+  "$TRANSCRIPTS" --name 'K562 transcript models' --height 90 \
+    --row-height 16 --representative-transcripts --color '#1B7837' \
   "$H3K27AC_SIGNAL" --name 'H3K27ac –log10(p)' --height 34 \
     --style area --color '#D95F0E' --percentile 0.995 \
   "$ATAC_SIGNAL" --name 'ATAC –log10(p)' --height 32 \
     --style line --color '#008B8B' --line-width 1.1 --percentile 0.995 \
-  "$LOOPS" --style arc --name 'loops (observed)' --height 40 \
-    --score-filter-min 60 --color '#753A8A' --line-width 1.2 \
-    --fill '#7A017720' \
+  "$LOOPS" --style arc --name 'loops (observed)' --height 175 \
+    --score-filter-min 20 --color '#753A8A' --line-width 1.0 \
   "$DOMAINS" --style domain --side above --color '#4D4D4D' --dashed \
   --out "examples/gallery/generated/06_arc_loops_and_genes"
 ```
@@ -284,14 +285,17 @@ The loop calls come from the same intact Hi-C experiment.
 
 ## 9. Local 2 kb map in blues
 
-A tighter 500 kb region shows the native 2 kb matrix bins with a linear blue scale.
+A tighter 500 kb region shows the native 2 kb matrix bins with a linear blue scale
+and red loop annotations above the diagonal.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:127450000-127950000 \
   --layout square --norm SCALE --resolution 2000 \
   --map-linear --map-colors blues --map-percentile 0.93 \
-  --width 7 --dpi 300 --formats png --theme publication \
+  --width 7 --dpi 500 --formats png --theme publication \
   --title 'K562 intact Hi-C — local contacts at 2 kb' \
+  "$LOOPS" --style loop --side above --color '#E31A1C' \
+    --line-width 0.8 --score-size 0.5,0.5 \
   --out "examples/gallery/generated/09_intact_2kb_blues"
 ```
 
@@ -299,14 +303,17 @@ A tighter 500 kb region shows the native 2 kb matrix bins with a linear blue sca
 
 ## 10. Broad 50 kb map in reds
 
-The 20 Mb chr8 view uses 50 kb bins to show larger scale contact structure.
+The 20 Mb chr8 view uses 50 kb bins and a 0–75 linear color scale to show
+larger scale contact structure, with a compartment track above the map.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:115000000-135000000 \
   --layout pyramid --norm SCALE --resolution 50000 --max-distance 8000000 \
-  --map-linear --map-colors reds --map-percentile 0.90 \
+  --map-linear --map-colors reds --map-max 75 \
   --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 intact Hi-C — chr8 overview at 50 kb' \
+  "$COMPARTMENTS" --name 'A/B compartment' --height 30 --style area \
+    --color '#B2182B' --neg-color '#2166AC' \
   --out "examples/gallery/generated/10_intact_50kb_reds"
 ```
 

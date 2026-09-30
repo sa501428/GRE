@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 #include "gre/core/error.hpp"
 #include "straw.h"
@@ -53,6 +54,7 @@ struct StrawMatrixSource::Impl {
     std::vector<std::int32_t> resolutions;
     std::vector<std::string> normalizations;
     std::int32_t last_resolution{0};
+    std::optional<MatrixData> last_query;
 
     // Largest stored resolution that still gives at least `target` bins across
     // `span`; the finest available when none qualifies.
@@ -177,9 +179,21 @@ MatrixData StrawMatrixSource::query(const MatrixRegion& region, std::size_t targ
     const std::int64_t y_start = align_down(region.y_start, bin);
     const std::int64_t y_end = std::max(align_up(region.y_end, bin), y_start + bin);
 
+    const MatrixRegion aligned{chrom_x, x_start, x_end, chrom_y, y_start, y_end};
+    if (impl_->last_query.has_value()) {
+        const MatrixData& cached = *impl_->last_query;
+        const MatrixRegion& prior = cached.region;
+        if (cached.bin_size == bin && prior.chrom_x == aligned.chrom_x &&
+            prior.x_start == aligned.x_start && prior.x_end == aligned.x_end &&
+            prior.chrom_y == aligned.chrom_y && prior.y_start == aligned.y_start &&
+            prior.y_end == aligned.y_end) {
+            return cached;
+        }
+    }
+
     MatrixData out;
     out.bin_size = bin;
-    out.region = MatrixRegion{chrom_x, x_start, x_end, chrom_y, y_start, y_end};
+    out.region = aligned;
     const auto width = static_cast<std::size_t>((x_end - x_start) / bin);
     const auto height = static_cast<std::size_t>((y_end - y_start) / bin);
     out.resize(width, height, 0.0F);
@@ -255,6 +269,12 @@ MatrixData StrawMatrixSource::query(const MatrixRegion& region, std::size_t targ
             out.values[i] = counts[i] > 0.0 ? static_cast<float>(sums[i] / counts[i])
                                             : std::numeric_limits<float>::quiet_NaN();
         }
+    }
+    // Reuse repeated exports without retaining an enormous second matrix.
+    if (out.values.size() <= 8'000'000) {
+        impl_->last_query = out;
+    } else {
+        impl_->last_query.reset();
     }
     return out;
 }

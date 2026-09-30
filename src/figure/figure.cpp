@@ -598,11 +598,13 @@ Size Figure::computed_size(double device_scale) { return build_layout(device_sca
 
 void Figure::render(Canvas& canvas) {
     const Layout layout = build_layout(canvas.device_scale());
+    last_rendered_size_ = layout.size;
     draw_layout(canvas, layout);
 }
 
 Image Figure::render_image(double dpi) {
     const Layout layout = build_layout(dpi / kPointsPerInch);
+    last_rendered_size_ = layout.size;
     RasterCanvas canvas(layout.size, dpi, colors::transparent);
     draw_layout(canvas, layout);
     return canvas.take_image();
@@ -618,6 +620,7 @@ void Figure::save_png(const std::string& path, double dpi) {
 void Figure::save_pdf(const std::string& path, PdfOptions options) {
     if (options.title.empty()) options.title = title_;
     const Layout layout = build_layout(1.0);
+    last_rendered_size_ = layout.size;
     PdfCanvas canvas(layout.size, std::move(options));
     draw_layout(canvas, layout);
     canvas.save(path);
@@ -625,6 +628,7 @@ void Figure::save_pdf(const std::string& path, PdfOptions options) {
 
 void Figure::save_svg(const std::string& path, SvgOptions options) {
     const Layout layout = build_layout(1.0);
+    last_rendered_size_ = layout.size;
     SvgCanvas canvas(layout.size, std::move(options));
     draw_layout(canvas, layout);
     canvas.save(path);

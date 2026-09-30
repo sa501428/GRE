@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 
 #include "gre/core/error.hpp"
 
@@ -52,6 +53,11 @@ GeneTrack& GeneTrack::collapsed(bool value) {
     return *this;
 }
 
+GeneTrack& GeneTrack::representative_transcripts(bool value) {
+    representative_transcripts_ = value;
+    return *this;
+}
+
 GeneTrack& GeneTrack::show_labels(bool value) {
     show_labels_ = value;
     return *this;
@@ -76,6 +82,25 @@ void GeneTrack::prepare(const ViewContext& context) {
     if (source_ != nullptr) {
         features_ = source_->query(context.x_region);
         have_data_ = true;
+    }
+    if (representative_transcripts_) {
+        std::vector<Feature> selected;
+        std::unordered_map<std::string, std::size_t> by_name;
+        selected.reserve(features_.size());
+        for (Feature& feature : features_) {
+            if (feature.name.empty()) {
+                selected.push_back(std::move(feature));
+                continue;
+            }
+            auto [it, inserted] = by_name.emplace(feature.name, selected.size());
+            if (inserted) {
+                selected.push_back(std::move(feature));
+            } else if (feature.end - feature.start >
+                       selected[it->second].end - selected[it->second].start) {
+                selected[it->second] = std::move(feature);
+            }
+        }
+        features_ = std::move(selected);
     }
     placed_.clear();
     rows_ = 1;

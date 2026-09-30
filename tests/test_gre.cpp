@@ -425,10 +425,13 @@ void test_square_layout() {
     panel.set_matrix(HeatmapTrack{matrix}.show_name(false).colors("gray_r"));
 
     const Size size = figure.computed_size();
+    CHECK(!figure.last_rendered_size().has_value());
     const double expected_side = 400.0 - gutter - (30.0 + 2.0);
     CHECK_NEAR(size.height, expected_side + 2.0, 0.5);
 
     const Image image = figure.render_image(72.0);
+    CHECK(figure.last_rendered_size().has_value());
+    CHECK_NEAR(figure.last_rendered_size()->height, size.height, 0.5);
     // The column sits at x in [1, 31] and spans the map's full height.
     CHECK(image.get(15, static_cast<int>(expected_side / 2.0)) != colors::white);
     // The map begins after the column.
@@ -817,6 +820,58 @@ void test_arc_track() {
     CHECK(has_red_arc);
 }
 
+void test_pyramid_domain_legs() {
+    const GenomicRegion region{"chr1", 0, 1000};
+    auto matrix = MemoryMatrixSource::make(MatrixRegion::square(region), 100, 10, 10,
+                                           std::vector<float>(100, 1.0F));
+    PairFeature domain;
+    domain.first = GenomicRegion{"chr1", 100, 110};
+    domain.second = GenomicRegion{"chr1", 890, 900};
+
+    HeatmapTrack map{matrix};
+    map.mode(HeatmapMode::triangle).height(50.0).limits(0.0, 2.0);
+    map.add_annotation(PairAnnotationLayer{MemoryPairFeatureSource::make({domain})}
+                           .style(PairAnnotationStyle::domain)
+                           .color(colors::red));
+    Theme theme;
+    ViewContext context;
+    context.x_region = region;
+    context.y_region = region;
+    context.content = Rect{0.0, 0.0, 100.0, 50.0};
+    context.device_scale = 1.0;
+    context.theme = &theme;
+    map.prepare(context);
+
+    struct DomainCanvas final : Canvas {
+        std::vector<Point> outline;
+        Size size() const override { return {100.0, 50.0}; }
+        void fill_rect(const Rect&, Color) override {}
+        void stroke_rect(const Rect&, const StrokeStyle&) override {}
+        void stroke_line(Point, Point, const StrokeStyle&) override {}
+        void stroke_polyline(std::span<const Point> points, const StrokeStyle&) override {
+            outline.assign(points.begin(), points.end());
+        }
+        void fill_polygon(std::span<const Point>, Color, FillRule) override {}
+        void draw_text(Point, std::string_view, const TextStyle&) override {}
+        void draw_image(const Rect&, const ImageView&) override {}
+        void push_clip(const Rect&) override {}
+        void pop_clip() override {}
+    } canvas;
+    TrackRect rect;
+    rect.content = context.content;
+    rect.x = GenomicTransform{region, 0.0, 100.0};
+    map.draw(canvas, rect);
+    CHECK(canvas.outline.size() == 3);
+    if (canvas.outline.size() == 3) {
+        CHECK_NEAR(canvas.outline[0].x, 10.0, 1e-9);
+        CHECK_NEAR(canvas.outline[0].y, 0.0, 1e-9);
+        CHECK_NEAR(canvas.outline[1].x, 50.0, 1e-9);
+        CHECK_NEAR(canvas.outline[1].y, 40.0, 1e-9);
+        CHECK_NEAR(canvas.outline[2].x, 90.0, 1e-9);
+        CHECK_NEAR(canvas.outline[2].y, 0.0, 1e-9);
+    }
+}
+
 void test_virtual4c_source() {
     const GenomicRegion region{"chr1", 0, 400};
     const std::vector<float> values = {
@@ -948,6 +1003,24 @@ void test_gene_packing() {
     collapsed.collapsed(true).show_labels(false);
     collapsed.prepare(context);
     CHECK(collapsed.rows() == 1);
+
+    Feature longer = features[1];
+    longer.start = 900;
+    longer.end = 2200;
+    features.push_back(longer);
+    GeneTrack representatives{features};
+    representatives.representative_transcripts(true);
+    representatives.prepare(context);
+    CHECK(representatives.features().size() == 3);
+    const auto longest = std::find_if(representatives.features().begin(),
+                                      representatives.features().end(),
+                                      [](const Feature& feature) {
+                                          return feature.name == "gene1";
+                                      });
+    CHECK(longest != representatives.features().end());
+    if (longest != representatives.features().end()) {
+        CHECK(longest->start == 900 && longest->end == 2200);
+    }
 }
 
 void test_gtf_transcript_assembly() {
@@ -1117,6 +1190,7 @@ int main() {
     test_pair_sources_and_overlays();
     test_score_styled_pairs();
     test_arc_track();
+    test_pyramid_domain_legs();
     test_virtual4c_source();
     test_shared_heatmap_scale();
     test_symmetric_scale();

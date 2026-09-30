@@ -24,6 +24,8 @@ public:
     GeneTrack& max_rows(int value);
     // Draw everything on a single row, ignoring overlap.
     GeneTrack& collapsed(bool value);
+    // Keep the longest displayed transcript for each gene name.
+    GeneTrack& representative_transcripts(bool value);
     GeneTrack& show_labels(bool value);
     GeneTrack& show_arrows(bool value);
     GeneTrack& label_font_size(double value);
@@ -56,6 +58,7 @@ private:
     double utr_height_{5.0};
     int max_rows_{12};
     bool collapsed_{false};
+    bool representative_transcripts_{false};
     bool show_labels_{true};
     bool show_arrows_{true};
     double label_font_size_{0.0};
