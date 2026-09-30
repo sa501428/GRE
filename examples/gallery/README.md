@@ -226,7 +226,7 @@ a dashed 2D overlay on the contact map.
     --style area --color '#D95F0E' --percentile 0.995 \
   "$ATAC_SIGNAL" --name 'ATAC –log10(p)' --height 32 \
     --style line --color '#008B8B' --line-width 1.1 --percentile 0.995 \
-  "$LOOPS" --style arc --name 'loops (observed)' --height 88 \
+  "$LOOPS" --style arc --name 'loops (observed)' --height 40 \
     --score-filter-min 60 --color '#753A8A' --line-width 1.2 \
     --fill '#7A017720' \
   "$DOMAINS" --style domain --side above --color '#4D4D4D' --dashed \
