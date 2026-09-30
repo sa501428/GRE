@@ -1343,6 +1343,16 @@ int main(int argc, char** argv) {
             }
             std::printf("map %zu: %zu x %zu bins at %lld bp, %zu non-empty\n", p + 1,
                         data.width, data.height, static_cast<long long>(data.bin_size), populated);
+            if (maps[p]->has_comparison()) {
+                const MatrixData& other = maps[p]->comparison_data();
+                std::size_t other_populated = 0;
+                for (float v : other.values) {
+                    if (std::isfinite(v) && v != 0.0F) ++other_populated;
+                }
+                std::printf("comparison map %zu: %zu x %zu bins at %lld bp, %zu non-empty\n",
+                            p + 1, other.width, other.height,
+                            static_cast<long long>(other.bin_size), other_populated);
+            }
             if (populated == 0) {
                 std::fprintf(stderr, "warning: no contacts in this region\n");
             }
