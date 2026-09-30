@@ -39,12 +39,12 @@ public:
     }
     Track& add_track(std::unique_ptr<Track> track);
 
-    // ---- square (Juicebox-style) layout -----------------------------------
+    // ---- matrix layout -----------------------------------------------------
     //
-    // Setting a matrix track switches the panel to a square arrangement:
+    // Setting a matrix track switches the panel to a matrix arrangement:
     //
     //     [ x tracks, full map width      ]
-    //     [ y ][ y ][   square contact map ]
+    //     [ y ][ y ][      contact map    ]
     //
     // Tracks added with add_track() stay horizontal above the map; tracks
     // added with add_y_track() are quarter-turned and run down the map's left
@@ -82,6 +82,8 @@ public:
     Track& add_bottom_track(std::unique_ptr<Track> track);
 
     [[nodiscard]] bool square_layout() const noexcept { return matrix_ != nullptr; }
+    // By default the matrix is square; use a positive height for a rectangle.
+    Panel& set_matrix_height(double height);
     [[nodiscard]] Track* matrix() noexcept { return matrix_.get(); }
     [[nodiscard]] std::size_t y_track_count() const noexcept { return y_tracks_.size(); }
     [[nodiscard]] Track& y_track(std::size_t index) { return *y_tracks_.at(index); }
@@ -114,6 +116,7 @@ private:
     bool has_region_y_{false};
     std::string title_;
     double height_{0.0};
+    double matrix_height_{0.0};
     Insets padding_{0.0};
     double label_width_{-1.0};    // negative: inherit from the theme
     double track_spacing_{-1.0};  // negative: inherit from the theme

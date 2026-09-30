@@ -35,7 +35,7 @@ All coordinates use GRCh38.
 | accession | role | format | ENCODE record | direct URL |
 |---|---|---|---|---|
 | `ENCFF621AIY` | K562 mapQ30 contact matrix | hic | [record](https://www.encodeproject.org/files/ENCFF621AIY/) | [download/range source](https://www.encodeproject.org/files/ENCFF621AIY/@@download/ENCFF621AIY.hic) |
-| `ENCFF070CHZ` | GM12878 intact Hi-C mapQ30 contact matrix for comparison | hic | [record](https://www.encodeproject.org/files/ENCFF070CHZ/) | [download/range source](https://www.encodeproject.org/files/ENCFF070CHZ/@@download/ENCFF070CHZ.hic) |
+| `ENCFF131VHO` | GM12878 intact Hi-C mapQ30 contact matrix for comparison | hic | [record](https://www.encodeproject.org/files/ENCFF131VHO/) | [download/range source](https://www.encodeproject.org/files/ENCFF131VHO/@@download/ENCFF131VHO.hic) |
 | `ENCFF944MHS` | K562 5 kb compartment eigenvector | bigWig | [record](https://www.encodeproject.org/files/ENCFF944MHS/) | [download/range source](https://www.encodeproject.org/files/ENCFF944MHS/@@download/ENCFF944MHS.bigWig) |
 | `ENCFF256ZMD` | K562 mapQ30 loops | BEDPE.gz | [record](https://www.encodeproject.org/files/ENCFF256ZMD/) | [stream source](https://www.encodeproject.org/files/ENCFF256ZMD/@@download/ENCFF256ZMD.bedpe.gz) |
 | `ENCFF126GED` | K562 mapQ30 5 kb contact domains | BEDPE.gz | [record](https://www.encodeproject.org/files/ENCFF126GED/) | [stream source](https://www.encodeproject.org/files/ENCFF126GED/@@download/ENCFF126GED.bedpe.gz) |
@@ -48,6 +48,8 @@ All coordinates use GRCh38.
 
 The K562 Hi-C, compartment, loop, and domain files belong to released intact
 Hi-C experiment [ENCSR479XDG](https://www.encodeproject.org/experiments/ENCSR479XDG/).
+The comparison matrix belongs to released GM12878 intact Hi-C experiment
+[ENCSR016TMB](https://www.encodeproject.org/experiments/ENCSR016TMB/).
 The H3K27ac peaks belong to released K562 Histone ChIP-seq experiment
 [ENCSR000AKP](https://www.encodeproject.org/experiments/ENCSR000AKP/).
 The additional H3K27ac signal is from that experiment; ATAC-seq is from
@@ -62,7 +64,7 @@ does:
 
 ```bash
 HIC='https://www.encodeproject.org/files/ENCFF621AIY/@@download/ENCFF621AIY.hic'
-GM12878_HIC='https://www.encodeproject.org/files/ENCFF070CHZ/@@download/ENCFF070CHZ.hic'
+GM12878_HIC='https://www.encodeproject.org/files/ENCFF131VHO/@@download/ENCFF131VHO.hic'
 COMPARTMENTS='https://www.encodeproject.org/files/ENCFF944MHS/@@download/ENCFF944MHS.bigWig'
 LOOPS='https://www.encodeproject.org/files/ENCFF256ZMD/@@download/ENCFF256ZMD.bedpe.gz'
 DOMAINS='https://www.encodeproject.org/files/ENCFF126GED/@@download/ENCFF126GED.bedpe.gz'
@@ -131,8 +133,10 @@ matching mapQ30 loop BEDPE are shown without an extra score cutoff.
 ## 3. VS mode: K562 above, GM12878 below
 
 Two intact Hi-C mapQ30 matrices compare K562 above the diagonal with
-GM12878 below. Both halves use linear scales and have aligned legends. Loop
-overlays are omitted to keep the comparison focused on the matrices.
+GM12878 below. Both are GRCh38, are queried at 25 kb with SCALE
+normalization, and use linear contact scales with aligned legends. The
+GM12878 file comes from a deeper intact Hi-C experiment than the previous
+single-replicate example. Loop overlays are omitted here.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
@@ -141,7 +145,7 @@ overlays are omitted to keep the comparison focused on the matrices.
   --vs "$GM12878_HIC" --vs-norm SCALE --vs-side below \
     --vs-map-colors blues --vs-map-linear --vs-map-percentile 0.90 \
   --width 7 --dpi 300 --formats png --theme publication \
-  --title 'Intact Hi-C — K562 above, GM12878 below' \
+  --title 'Intact Hi-C at 25 kb — K562 above, GM12878 below' \
   --diagonal --out "examples/gallery/generated/03_k562_vs_gm12878"
 ```
 
@@ -180,16 +184,20 @@ are panel-scoped. Loop overlays are omitted here for a clearer comparison.
 ## 5. Dark off-diagonal rectangle
 
 Rectangle mode treats x and y as independent regions. This example displays a
-square-shaped block away from the main diagonal, overlays oriented loop boxes, and projects
-separate supplied genomic intervals across x and y as cyan and yellow bands.
+square-shaped block away from the main diagonal, overlays oriented loop boxes,
+and projects genomic intervals across x and y as cyan and yellow bands. The
+K562 CTCF signal is shown above the horizontal axis and beside the vertical
+axis, each queried over its corresponding genomic region.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-128300000 \
   --layout rectangle --region-y chr8:128000000-130000000 \
-  --norm SCALE --resolution 10000 --map-height 390 --map-linear \
+  --norm SCALE --resolution 10000 --map-height 360 --map-linear \
   --map-colors magma --map-percentile 0.97 \
   --width 7 --dpi 500 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \
+  "$CTCF_SIGNAL" --name 'CTCF' --axis both --height 26 \
+    --style area --color '#2EC4B6' --percentile 0.995 \
   "$LOOPS" --style box --fill '#FFFFFF12' --color '#B4BFC9' \
     --score-filter-min 60 --line-width 0.6 --score-size 0.7,0.7 \
   --v-highlight chr8:127700000-127750000 \
@@ -283,37 +291,43 @@ The loop calls come from the same intact Hi-C experiment.
 
 ![K562 intact Hi-C 5 kb square contact map in viridis](generated/08_intact_5kb_viridis.png)
 
-## 9. Local 2 kb map in blues
+## 9. Local 2 kb map in Juicebox white-to-red
 
-A tighter 500 kb region shows the native 2 kb matrix bins with a linear blue scale
-and red loop annotations above the diagonal.
+A tighter 500 kb region shows the native 2 kb matrix bins with the pure
+white-to-red Juicebox palette, red loop annotations above the diagonal, and a
+K562 CTCF signal track.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:127450000-127950000 \
   --layout square --norm SCALE --resolution 2000 \
-  --map-linear --map-colors blues --map-percentile 0.93 \
+  --map-linear --map-colors juicebox --map-percentile 0.93 \
   --width 7 --dpi 500 --formats png --theme publication \
-  --title 'K562 intact Hi-C — local contacts at 2 kb' \
+  --title 'K562 intact Hi-C — 2 kb, white-to-red scale' \
+  "$CTCF_SIGNAL" --name 'CTCF' --height 28 --style area \
+    --color '#187B83' --percentile 0.995 \
   "$LOOPS" --style loop --side above --color '#E31A1C' \
     --line-width 0.8 --score-size 0.5,0.5 \
-  --out "examples/gallery/generated/09_intact_2kb_blues"
+  --out "examples/gallery/generated/09_intact_2kb_juicebox"
 ```
 
-![K562 intact Hi-C 2 kb square contact map in blues](generated/09_intact_2kb_blues.png)
+![K562 intact Hi-C 2 kb square contact map in Juicebox white-to-red](generated/09_intact_2kb_juicebox.png)
 
 ## 10. Broad 50 kb map in reds
 
-The 20 Mb chr8 view uses 50 kb bins and a 0–75 linear color scale to show
-larger scale contact structure, with a compartment track above the map.
+The 20 Mb chr8 view uses 50 kb bins and a 0–100 linear color scale to show
+larger scale contact structure, with a compartment track above the map and
+cyan domain legs over the contact triangle.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:115000000-135000000 \
   --layout pyramid --norm SCALE --resolution 50000 --max-distance 8000000 \
-  --map-linear --map-colors reds --map-max 75 \
+  --map-linear --map-colors reds --map-max 100 \
   --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 intact Hi-C — chr8 overview at 50 kb' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 30 --style area \
     --color '#B2182B' --neg-color '#2166AC' \
+  "$DOMAINS" --style domain --side above --color '#00AFC5' \
+    --line-width 0.65 \
   --out "examples/gallery/generated/10_intact_50kb_reds"
 ```
 

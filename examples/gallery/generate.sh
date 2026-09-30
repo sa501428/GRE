@@ -28,7 +28,7 @@ run_plot() {
 }
 
 HIC='https://www.encodeproject.org/files/ENCFF621AIY/@@download/ENCFF621AIY.hic'
-GM12878_HIC='https://www.encodeproject.org/files/ENCFF070CHZ/@@download/ENCFF070CHZ.hic'
+GM12878_HIC='https://www.encodeproject.org/files/ENCFF131VHO/@@download/ENCFF131VHO.hic'
 COMPARTMENTS='https://www.encodeproject.org/files/ENCFF944MHS/@@download/ENCFF944MHS.bigWig'
 LOOPS='https://www.encodeproject.org/files/ENCFF256ZMD/@@download/ENCFF256ZMD.bedpe.gz'
 DOMAINS='https://www.encodeproject.org/files/ENCFF126GED/@@download/ENCFF126GED.bedpe.gz'
@@ -76,7 +76,7 @@ run_plot "$HIC" chr8:126500000-130000000 \
   --vs "$GM12878_HIC" --vs-norm SCALE --vs-side below \
     --vs-map-colors blues --vs-map-linear --vs-map-percentile 0.90 \
   --width 7 --dpi 300 --formats png --theme publication \
-  --title 'Intact Hi-C — K562 above, GM12878 below' \
+  --title 'Intact Hi-C at 25 kb — K562 above, GM12878 below' \
   --diagonal --out "$OUT_DIR/03_k562_vs_gm12878"
 
 run_plot "$HIC" chr8:126500000-130000000 \
@@ -98,10 +98,12 @@ run_plot "$HIC" chr8:126500000-130000000 \
 
 run_plot "$HIC" chr8:126500000-128300000 \
   --layout rectangle --region-y chr8:128000000-130000000 \
-  --norm SCALE --resolution 10000 --map-height 390 --map-linear \
+  --norm SCALE --resolution 10000 --map-height 360 --map-linear \
   --map-colors magma --map-percentile 0.97 \
   --width 7 --dpi 500 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \
+  "$CTCF_SIGNAL" --name 'CTCF' --axis both --height 26 \
+    --style area --color '#2EC4B6' --percentile 0.995 \
   "$LOOPS" --style box --fill '#FFFFFF12' --color '#B4BFC9' \
     --score-filter-min 60 --line-width 0.6 --score-size 0.7,0.7 \
   --v-highlight chr8:127700000-127750000 \
@@ -153,20 +155,24 @@ run_plot "$HIC" chr8:127000000-128000000 \
 
 run_plot "$HIC" chr8:127450000-127950000 \
   --layout square --norm SCALE --resolution 2000 \
-  --map-linear --map-colors blues --map-percentile 0.93 \
+  --map-linear --map-colors juicebox --map-percentile 0.93 \
   --width 7 --dpi 500 --formats png --theme publication \
-  --title 'K562 intact Hi-C — local contacts at 2 kb' \
+  --title 'K562 intact Hi-C — 2 kb, white-to-red scale' \
+  "$CTCF_SIGNAL" --name 'CTCF' --height 28 --style area \
+    --color '#187B83' --percentile 0.995 \
   "$LOOPS" --style loop --side above --color '#E31A1C' \
     --line-width 0.8 --score-size 0.5,0.5 \
-  --out "$OUT_DIR/09_intact_2kb_blues"
+  --out "$OUT_DIR/09_intact_2kb_juicebox"
 
 run_plot "$HIC" chr8:115000000-135000000 \
   --layout pyramid --norm SCALE --resolution 50000 --max-distance 8000000 \
-  --map-linear --map-colors reds --map-max 75 \
+  --map-linear --map-colors reds --map-max 100 \
   --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 intact Hi-C — chr8 overview at 50 kb' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 30 --style area \
     --color '#B2182B' --neg-color '#2166AC' \
+  "$DOMAINS" --style domain --side above --color '#00AFC5' \
+    --line-width 0.65 \
   --out "$OUT_DIR/10_intact_50kb_reds"
 
 for pid in "${pids[@]}"; do

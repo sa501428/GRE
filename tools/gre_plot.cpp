@@ -1231,12 +1231,13 @@ int main(int argc, char** argv) {
                     (spec.kind == TrackKind::bedpe && !is_arc_track(spec))) {
                     continue;
                 }
-                const bool on_x = spec.axis != TrackAxis::y || !square;
+                const bool on_x = spec.axis != TrackAxis::y || !(square || rectangle);
                 if (on_x) panel.add_track(build_track(spec, sources[i], /*vertical=*/false));
             }
 
             HeatmapTrack* map = nullptr;
-            if (square) {
+            if (square || rectangle) {
+                if (rectangle) panel.set_matrix_height(options.map_height.value_or(240.0));
                 panel.add_y_track(AxisTrack{}.position(AxisPosition::bottom).height(26.0));
                 for (std::size_t i = 0; i < options.tracks.size(); ++i) {
                     const TrackSpec& spec = options.tracks[i];
@@ -1249,15 +1250,15 @@ int main(int argc, char** argv) {
                 }
                 if (!options.no_map) {
                     map = static_cast<HeatmapTrack*>(&panel.set_matrix(build_map(
-                        options, matrix, comparison, HeatmapMode::square, shared_primary,
+                        options, matrix, comparison,
+                        rectangle ? HeatmapMode::rectangle : HeatmapMode::square, shared_primary,
                         shared_comparison)));
                 }
                 panel.add_bottom_track(AxisTrack{}.position(AxisPosition::bottom));
             } else if (!options.no_map) {
-                const HeatmapMode mode =
-                    rectangle ? HeatmapMode::rectangle : HeatmapMode::triangle;
                 map = static_cast<HeatmapTrack*>(&panel.add_track(build_map(
-                    options, matrix, comparison, mode, shared_primary, shared_comparison)));
+                    options, matrix, comparison, HeatmapMode::triangle, shared_primary,
+                    shared_comparison)));
             }
 
             if (map != nullptr) {

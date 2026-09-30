@@ -442,6 +442,51 @@ void test_square_layout() {
     CHECK(image.get(0, static_cast<int>(expected_side / 2.0)) == colors::white);
 }
 
+void test_rectangular_matrix_with_side_track() {
+    auto matrix = MemoryMatrixSource::make(
+        MatrixRegion{"chr1", 0, 1000, "chr1", 2000, 3000}, 100, 10, 10,
+        std::vector<float>(100, 1.0F));
+    auto signal = MemorySignalSource::make("chr1", {{2000, 2200, 5.0}});
+
+    Figure figure;
+    figure.set_width(300.0).set_margins(Insets{0.0});
+    Panel& panel = figure.add_panel();
+    panel.set_region("chr1", 0, 1000)
+        .set_region_y(GenomicRegion{"chr1", 2000, 3000})
+        .set_label_width(0.0)
+        .set_matrix_height(120.0);
+    panel.add_y_track(SignalTrack{signal}.height(25.0).show_name(false));
+    panel.set_matrix(HeatmapTrack{matrix}
+                         .mode(HeatmapMode::rectangle)
+                         .height(120.0)
+                         .show_name(false));
+
+    struct RectProbe final : Canvas {
+        Rect map;
+        std::vector<Rect> clips;
+        Size size() const override { return {300.0, 300.0}; }
+        void fill_rect(const Rect&, Color) override {}
+        void stroke_rect(const Rect&, const StrokeStyle&) override {}
+        void stroke_line(Point, Point, const StrokeStyle&) override {}
+        void stroke_polyline(std::span<const Point>, const StrokeStyle&) override {}
+        void fill_polygon(std::span<const Point>, Color, FillRule) override {}
+        void draw_text(Point, std::string_view, const TextStyle&) override {}
+        void draw_image(const Rect& rect, const ImageView&) override { map = rect; }
+        void push_clip(const Rect& rect) override { clips.push_back(rect); }
+        void pop_clip() override {}
+    } canvas;
+    figure.render(canvas);
+    CHECK_NEAR(canvas.map.height, 120.0, 1e-9);
+    CHECK(canvas.map.width > 200.0);
+    bool side_matches_map = false;
+    for (const Rect& clip : canvas.clips) {
+        if (std::fabs(clip.height - 122.0) < 1e-9 && clip.width < 40.0) {
+            side_matches_map = true;
+        }
+    }
+    CHECK(side_matches_map);
+}
+
 void test_layout() {
     auto signal = MemorySignalSource::make(
         "chr1", {{1000, 2000, 5.0}, {2000, 3000, 10.0}, {3000, 4000, 2.0}});
@@ -1183,6 +1228,7 @@ int main() {
     test_draw_image();
     test_rotated_canvas();
     test_square_layout();
+    test_rectangular_matrix_with_side_track();
     test_layout();
     test_signal_source();
     test_matrix_source();

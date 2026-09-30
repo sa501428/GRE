@@ -72,6 +72,11 @@ Panel& Panel::set_height(double height) {
     return *this;
 }
 
+Panel& Panel::set_matrix_height(double height) {
+    matrix_height_ = height;
+    return *this;
+}
+
 Panel& Panel::set_padding(Insets padding) {
     padding_ = padding;
     return *this;

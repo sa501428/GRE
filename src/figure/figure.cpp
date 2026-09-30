@@ -132,16 +132,17 @@ Figure::Layout Figure::build_layout(double device_scale) {
         std::vector<double> flex;
         std::vector<double> bottom_heights;  // x tracks, below the map
         std::vector<double> bottom_flex;
-        std::vector<double> y_widths;  // side tracks, square panels only
+        std::vector<double> y_widths;  // side tracks, matrix panels only
         double label_width{};
         double title_height{};
         double natural_height{};
         double plot_left{};
         double plot_right{};
         double spacing{};
-        // Square panels only.
+        // Matrix panels only.
         double map_left{};
         double map_side{};
+        double map_height{};
         double y_label_height{};
 
         [[nodiscard]] double total_flex() const {
@@ -203,10 +204,10 @@ Figure::Layout Figure::build_layout(double device_scale) {
         context.theme = &theme_;
         context.preparation_id = preparation_id;
 
-        // Square panels reserve columns on the left for the quarter-turned
-        // tracks, and the map takes whatever square fits in what is left.
+        // Matrix panels reserve columns on the left for quarter-turned tracks.
         state.map_left = state.plot_left;
         state.map_side = state.plot_right - state.plot_left;
+        state.map_height = panel.matrix_height_ > 0.0 ? panel.matrix_height_ : state.map_side;
         if (panel.square_layout()) {
             const double available = state.plot_right - state.plot_left;
             state.y_widths.resize(panel.y_tracks_.size());
@@ -233,8 +234,11 @@ Figure::Layout Figure::build_layout(double device_scale) {
                 ViewContext side_context = context;
                 side_context.x_region = panel.region_y();
                 side_context.y_region = panel.region_y();
+                const double axis_length = panel.matrix_height_ > 0.0
+                                               ? panel.matrix_height_
+                                               : map_side;
                 for (std::size_t i = 0; i < panel.y_tracks_.size(); ++i) {
-                    side_context.content = Rect{0.0, 0.0, std::max(map_side, 1.0),
+                    side_context.content = Rect{0.0, 0.0, std::max(axis_length, 1.0),
                                                 state.y_widths[i]};
                     panel.y_tracks_[i]->prepare(side_context);
                     state.y_widths[i] = std::max(0.0, panel.y_tracks_[i]->preferred_height());
@@ -251,6 +255,9 @@ Figure::Layout Figure::build_layout(double device_scale) {
             }
             state.map_side = std::max(available - columns_total(), 1.0);
             state.map_left = state.plot_right - state.map_side;
+            state.map_height = panel.matrix_height_ > 0.0
+                                   ? panel.matrix_height_
+                                   : state.map_side;
 
             bool any_side_name = false;
             for (const auto& track : panel.y_tracks_) {
@@ -289,15 +296,16 @@ Figure::Layout Figure::build_layout(double device_scale) {
 
         const double top_stack = prepare_band(panel.tracks_, state.heights, state.flex);
 
-        // The panel is up to three horizontal bands: tracks, then the square
+        // The panel is up to three horizontal bands: tracks, then the
         // map (when there is one), then the bottom tracks.
         double content_height = top_stack;
         if (panel.square_layout()) {
             ViewContext matrix_context = context;
-            matrix_context.content = Rect{state.map_left, 0.0, state.map_side, state.map_side};
+            matrix_context.content = Rect{state.map_left, 0.0, state.map_side,
+                                          state.map_height};
             panel.matrix_->prepare(matrix_context);
             if (!panel.tracks_.empty()) content_height += state.spacing;
-            content_height += state.map_side + panel.matrix_->margins().vertical() +
+            content_height += state.map_height + panel.matrix_->margins().vertical() +
                               state.y_label_height;
         }
         // Linked colour bars read their fitted scale from the matrix, so the
@@ -419,13 +427,13 @@ Figure::Layout Figure::build_layout(double device_scale) {
             const Insets& matrix_margins = panel.matrix_->margins();
             y += matrix_margins.top;
             const double map_top = y;
-            const Rect map{state.map_left, map_top, state.map_side, state.map_side};
+            const Rect map{state.map_left, map_top, state.map_side, state.map_height};
 
             TrackLayout matrix_entry;
             matrix_entry.track = panel.matrix_.get();
             matrix_entry.rect.full = map;
             matrix_entry.rect.content = map;
-            matrix_entry.rect.label = Rect{map.left(), map_top, 0.0, state.map_side};
+            matrix_entry.rect.label = Rect{map.left(), map_top, 0.0, state.map_height};
             matrix_entry.rect.x = GenomicTransform{panel.region(), map.left(), map.right()};
             matrix_entry.rect.y = GenomicTransform{panel.region_y(), map.top(), map.bottom()};
             matrix_entry.clip = clip_for(map);
@@ -453,13 +461,13 @@ Figure::Layout Figure::build_layout(double device_scale) {
                 entry.side = true;
                 entry.rotation = -90.0;
                 entry.origin = Point{column_right, map_top};
-                entry.rect.full = Rect{0.0, 0.0, state.map_side, state.y_widths[i]};
+                entry.rect.full = Rect{0.0, 0.0, state.map_height, state.y_widths[i]};
                 entry.rect.content = entry.rect.full;
                 entry.rect.label = Rect{0.0, 0.0, 0.0, state.y_widths[i]};
-                entry.rect.x = GenomicTransform{panel.region_y(), 0.0, state.map_side};
+                entry.rect.x = GenomicTransform{panel.region_y(), 0.0, state.map_height};
                 entry.rect.y = entry.rect.x;
                 entry.clip = Rect{column_left - 1.0, map_top - 1.0, state.y_widths[i] + 2.0,
-                                  state.map_side + 2.0};
+                                  state.map_height + 2.0};
                 entry.draw_name = track.show_name() && !track.name().empty();
                 entry.name_anchor =
                     Point{(column_left + column_right) / 2.0, map.bottom() + 2.0};
