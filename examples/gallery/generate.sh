@@ -160,7 +160,7 @@ run_plot "$HIC" chr8:127450000-127950000 \
   --title 'K562 intact Hi-C — 2 kb, white-to-red scale' \
   "$CTCF_SIGNAL" --name 'CTCF' --height 28 --style area \
     --color '#187B83' --percentile 0.995 \
-  "$LOOPS" --style loop --side above --color '#E31A1C' \
+  "$LOOPS" --style loop --side above --color '#007F8B' \
     --line-width 0.8 --score-size 0.5,0.5 \
   --out "$OUT_DIR/09_intact_2kb_juicebox"
 

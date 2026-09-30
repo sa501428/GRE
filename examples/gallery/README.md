@@ -294,7 +294,7 @@ The loop calls come from the same intact Hi-C experiment.
 ## 9. Local 2 kb map in Juicebox white-to-red
 
 A tighter 500 kb region shows the native 2 kb matrix bins with the pure
-white-to-red Juicebox palette, red loop annotations above the diagonal, and a
+white-to-red Juicebox palette, contrasting teal loop annotations above the diagonal, and a
 K562 CTCF signal track.
 
 ```bash
@@ -305,7 +305,7 @@ K562 CTCF signal track.
   --title 'K562 intact Hi-C — 2 kb, white-to-red scale' \
   "$CTCF_SIGNAL" --name 'CTCF' --height 28 --style area \
     --color '#187B83' --percentile 0.995 \
-  "$LOOPS" --style loop --side above --color '#E31A1C' \
+  "$LOOPS" --style loop --side above --color '#007F8B' \
     --line-width 0.8 --score-size 0.5,0.5 \
   --out "examples/gallery/generated/09_intact_2kb_juicebox"
 ```
