@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <unordered_map>
 
 #include "gre/core/error.hpp"
 #include "igv/igv.hpp"
@@ -268,6 +269,69 @@ std::vector<Feature> IgvFeatureSource::query(const GenomicRegion& region) {
             records.clear();
         }
         if (!records.empty()) break;
+    }
+
+    // GTF/GFF readers expose one record per line. Assemble records carrying a
+    // transcript_id into the exon-aware Feature representation expected by
+    // GeneTrack. This turns transcript/exon/CDS rows into one drawable model
+    // without changing ordinary BED, bigBed, peak, or promoter inputs.
+    const bool assemble_transcripts = impl_->type_filter.empty() &&
+        std::any_of(records.begin(), records.end(), [](const igv::Feature& record) {
+            return record.attributes.find("transcript_id") != record.attributes.end() &&
+                   (record.type == "transcript" || record.type == "mRNA" ||
+                    record.type == "exon" || record.type == "CDS");
+        });
+    if (assemble_transcripts) {
+        std::vector<Feature> out;
+        std::unordered_map<std::string, std::size_t> index;
+        for (const igv::Feature& record : records) {
+            const auto transcript = record.attributes.find("transcript_id");
+            if (transcript == record.attributes.end()) continue;
+            auto [position, inserted] = index.emplace(transcript->second, out.size());
+            if (inserted) {
+                Feature model;
+                model.chrom = record.interval.contig;
+                model.start = record.interval.start;
+                model.end = record.interval.end;
+                model.strand = convert_strand(record.strand);
+                const auto gene_name = record.attributes.find("gene_name");
+                const auto transcript_name = record.attributes.find("transcript_name");
+                model.name = gene_name != record.attributes.end()
+                                 ? gene_name->second
+                                 : transcript_name != record.attributes.end()
+                                       ? transcript_name->second
+                                       : !record.name.empty() ? record.name : transcript->second;
+                out.push_back(std::move(model));
+            }
+            Feature& model = out[position->second];
+            model.start = std::min(model.start, record.interval.start);
+            model.end = std::max(model.end, record.interval.end);
+            if (record.type == "exon") {
+                model.exons.push_back(Exon{record.interval.start, record.interval.end});
+            } else if (record.type == "CDS") {
+                if (!model.has_thick()) {
+                    model.thick_start = record.interval.start;
+                    model.thick_end = record.interval.end;
+                } else {
+                    model.thick_start = std::min(model.thick_start, record.interval.start);
+                    model.thick_end = std::max(model.thick_end, record.interval.end);
+                }
+            }
+        }
+        for (Feature& model : out) {
+            std::sort(model.exons.begin(), model.exons.end(), [](const Exon& a, const Exon& b) {
+                return a.start != b.start ? a.start < b.start : a.end < b.end;
+            });
+            model.exons.erase(std::unique(model.exons.begin(), model.exons.end(),
+                                          [](const Exon& a, const Exon& b) {
+                                              return a.start == b.start && a.end == b.end;
+                                          }),
+                              model.exons.end());
+        }
+        if (impl_->max_features > 0 && out.size() > impl_->max_features) {
+            out.resize(impl_->max_features);
+        }
+        return out;
     }
 
     std::vector<Feature> out;

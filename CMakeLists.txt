@@ -62,6 +62,7 @@ add_library(gre
     src/figure/panel.cpp
     src/figure/figure.cpp
     src/tracks/axis_track.cpp
+    src/tracks/arc_track.cpp
     src/tracks/signal_track.cpp
     src/tracks/heatmap_track.cpp
     src/tracks/map_annotation.cpp

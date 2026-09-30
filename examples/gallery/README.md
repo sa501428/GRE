@@ -2,8 +2,8 @@
 
 These figures are generated entirely from released public ENCODE files. The
 large `.hic` is queried in place with HTTP byte ranges; indexed bigWig and
-bigBed files are also queried remotely. The small compressed BEDPE and GTF
-files are streamed directly and held in memory for the duration of a render.
+bigBed files are also queried remotely. Compressed BEDPE and GTF files are
+streamed directly and held in memory for the duration of a render.
 No ENCODE input needs to be downloaded or checked into this repository.
 
 The committed PNGs were generated at 150 DPI with:
@@ -36,11 +36,21 @@ All coordinates use GRCh38.
 | `ENCFF173VDJ` | K562 mapQ30 5 kb contact domains | BEDPE.gz | [record](https://www.encodeproject.org/files/ENCFF173VDJ/) | [stream source](https://www.encodeproject.org/files/ENCFF173VDJ/@@download/ENCFF173VDJ.bedpe.gz) |
 | `ENCFF045OHM` | K562 replicated H3K27ac peaks | bigBed | [record](https://www.encodeproject.org/files/ENCFF045OHM/) | [download/range source](https://www.encodeproject.org/files/ENCFF045OHM/@@download/ENCFF045OHM.bigBed) |
 | `ENCFF005MUK` | GENCODE v47 promoter reference | GTF.gz | [record](https://www.encodeproject.org/files/ENCFF005MUK/) | [stream source](https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MUK.gtf.gz) |
+| `ENCFF094XCU` | K562 H3K27ac signal p-value | bigWig | [record](https://www.encodeproject.org/files/ENCFF094XCU/) | [download/range source](https://www.encodeproject.org/files/ENCFF094XCU/@@download/ENCFF094XCU.bigWig) |
+| `ENCFF357GNC` | K562 ATAC-seq signal p-value | bigWig | [record](https://www.encodeproject.org/files/ENCFF357GNC/) | [download/range source](https://www.encodeproject.org/files/ENCFF357GNC/@@download/ENCFF357GNC.bigWig) |
+| `ENCFF336UPT` | K562 CTCF ChIP-seq signal p-value | bigWig | [record](https://www.encodeproject.org/files/ENCFF336UPT/) | [download/range source](https://www.encodeproject.org/files/ENCFF336UPT/@@download/ENCFF336UPT.bigWig) |
+| `ENCFF688NNQ` | K562 transcript models, GENCODE V29-based | GTF.gz | [record](https://www.encodeproject.org/files/ENCFF688NNQ/) | [stream source](https://www.encodeproject.org/files/ENCFF688NNQ/@@download/ENCFF688NNQ.gtf.gz) |
 
 The Hi-C, compartment, loop, and domain files belong to released K562 in situ
 Hi-C experiment [ENCSR545YBD](https://www.encodeproject.org/experiments/ENCSR545YBD/).
 The H3K27ac peaks belong to released K562 Histone ChIP-seq experiment
 [ENCSR000AKP](https://www.encodeproject.org/experiments/ENCSR000AKP/).
+The additional H3K27ac signal is from that experiment; ATAC-seq is from
+[ENCSR868FGK](https://www.encodeproject.org/experiments/ENCSR868FGK/), CTCF
+ChIP-seq is from
+[ENCSR000EGM](https://www.encodeproject.org/experiments/ENCSR000EGM/), and the
+K562 transcript models are from
+[ENCSR589FUJ](https://www.encodeproject.org/experiments/ENCSR589FUJ/).
 
 The commands below assume these shell variables, exactly as the generator
 does:
@@ -52,6 +62,10 @@ LOOPS='https://www.encodeproject.org/files/ENCFF134HIZ/@@download/ENCFF134HIZ.be
 DOMAINS='https://www.encodeproject.org/files/ENCFF173VDJ/@@download/ENCFF173VDJ.bedpe.gz'
 H3K27AC_PEAKS='https://www.encodeproject.org/files/ENCFF045OHM/@@download/ENCFF045OHM.bigBed'
 PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MUK.gtf.gz'
+H3K27AC_SIGNAL='https://www.encodeproject.org/files/ENCFF094XCU/@@download/ENCFF094XCU.bigWig'
+ATAC_SIGNAL='https://www.encodeproject.org/files/ENCFF357GNC/@@download/ENCFF357GNC.bigWig'
+CTCF_SIGNAL='https://www.encodeproject.org/files/ENCFF336UPT/@@download/ENCFF336UPT.bigWig'
+TRANSCRIPTS='https://www.encodeproject.org/files/ENCFF688NNQ/@@download/ENCFF688NNQ.gtf.gz'
 GRE_PLOT='./build/tools/gre_plot'
 ```
 
@@ -190,6 +204,69 @@ separate supplied genomic intervals across x and y as cyan and yellow bands.
 
 ![Dark off-diagonal rectangular contact block with loop boxes and orthogonal highlights](generated/05_off_diagonal_rectangle.png)
 
+## 6. Supplied loops as arcs, transcript models, and a blue map
+
+The same ENCODE BEDPE loops can be represented as a separate one-dimensional
+arc track instead of markers on the matrix. Arc endpoint positions come
+directly from the supplied anchors; separation controls the base height, while
+the BEDPE observed score controls colour, opacity, stroke width, and a height
+multiplier. Longer arcs are painted first so short local loops remain visible.
+
+This example also demonstrates a true transcript-model row and two independent
+quantitative assays. H3K27ac is an orange filled area, ATAC-seq is a teal line,
+and the Hi-C matrix uses the sequential `blues` palette. Supplied domains remain
+a dashed 2D overlay on the contact map.
+
+```bash
+"$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
+  --layout pyramid --norm SCALE --resolution 25000 --max-distance 700000 \
+  --map-colors blues --map-percentile 0.995 \
+  --width 7 --label-width 110 --dpi 150 --formats png --theme publication \
+  --title 'K562 — loops as arcs above a blue contact map' \
+  "$TRANSCRIPTS" --name 'K562 transcript models' --height 70 \
+    --row-height 13 --color '#1B7837' --no-labels \
+  "$H3K27AC_SIGNAL" --name 'H3K27ac –log10(p)' --height 34 \
+    --style area --color '#D95F0E' --percentile 0.995 \
+  "$ATAC_SIGNAL" --name 'ATAC –log10(p)' --height 32 \
+    --style line --color '#008B8B' --line-width 1.1 --percentile 0.995 \
+  "$LOOPS" --style arc --name 'loops (observed)' --height 88 \
+    --score-filter-min 40 --colormap plasma --score-opacity 0.45,1 \
+    --score-line-width 0.7,2.4 --score-size 0.7,1.25 \
+    --fill '#7A017720' --arc-curvature 0.42 \
+  "$DOMAINS" --style domain --side above --color '#4D4D4D' --dashed \
+  --out examples/gallery/generated/06_arc_loops_and_genes
+```
+
+![Blue pyramid map with transcript models, H3K27ac, ATAC-seq, and score-styled BEDPE arcs](generated/06_arc_loops_and_genes.png)
+
+## 7. Tracks-only figure with area, bars, points, and intervals
+
+GRE can compose 1D figures without drawing a contact matrix. This dark-theme
+example uses `--no-map` and intentionally gives every layer a different visual
+grammar: H3K27ac as an orange area with a proper y axis, ATAC-seq as turquoise
+bars using maximum aggregation, CTCF as magenta points, scored H3K27ac peaks
+with `viridis`, and GENCODE promoters as yellow intervals.
+
+```bash
+"$GRE_PLOT" "$HIC" chr8:127200000-128200000 \
+  --no-map --norm SCALE --width 7 --label-width 110 --dpi 150 --formats png --theme dark \
+  --title 'K562 — 1D track styles at MYC' \
+  --subtitle 'area, bars, points, and scored intervals from public ENCODE URLs' \
+  "$H3K27AC_SIGNAL" --name 'H3K27ac area' --height 46 \
+    --style area --color '#FF9F1C' --percentile 0.995 --y-axis \
+  "$ATAC_SIGNAL" --name 'ATAC bars' --height 44 \
+    --style bars --color '#2EC4B6' --percentile 0.995 --aggregate max \
+  "$CTCF_SIGNAL" --name 'CTCF points' --height 42 \
+    --style points --color '#E056FD' --line-width 1.4 --percentile 0.995 \
+  "$H3K27AC_PEAKS" --type interval --name 'H3K27ac peaks' --height 24 \
+    --colormap viridis --no-labels \
+  "$PROMOTERS" --type interval --name 'GENCODE promoters' --height 24 \
+    --color '#F4D35E' --no-labels \
+  --out examples/gallery/generated/07_one_dimensional_tracks
+```
+
+![Dark tracks-only figure with area, bars, points, scored peaks, and promoter intervals](generated/07_one_dimensional_tracks.png)
+
 ## Reproducibility notes
 
 - These examples use the file's resolution-specific `SCALE` vectors. This
@@ -203,6 +280,9 @@ separate supplied genomic intervals across x and y as cyan and yellow bands.
 - HTTP errors, range-request failures, or portal maintenance can interrupt a
   remote render. Re-running the script is safe; each output PNG is replaced
   only after its command completes successfully.
+- The 44.9 MB transcript GTF used by example 6 is streamed because GTF is not
+  indexed for genomic range requests. The `.hic` and bigWig/bigBed inputs are
+  range-queried and are not downloaded in full.
 - BEDPE column 8 is empty in these Juicer outputs. GRE recognizes the common
   ENCODE/Juicer layout and uses the quantitative column after itemRgb (column
   12: observed loop count or domain score) as a fallback score.

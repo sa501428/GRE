@@ -51,7 +51,7 @@ The gallery below is rendered from public ENCODE URLs. GRE range-queries the
 20.7 GB `.hic` and indexed bigWig/bigBed inputs in place; it does not download
 those files in full. Each figure's exact command, input accession table, direct
 URLs, interpretation, and regeneration instructions are in the
-[complete gallery](examples/gallery/README.md). Run all five with
+[complete gallery](examples/gallery/README.md). Run all seven with
 `./examples/gallery/generate.sh`.
 
 ### Pyramid with 1D tracks, domains, and score-styled loops
@@ -73,6 +73,14 @@ URLs, interpretation, and regeneration instructions are in the
 ### Dark off-diagonal rectangular block
 
 ![K562 dark off-diagonal contact block with loop boxes and highlights](examples/gallery/generated/05_off_diagonal_rectangle.png)
+
+### BEDPE loops as 1D arcs with genes and quantitative tracks
+
+![K562 loop arcs, transcript models, H3K27ac and ATAC above a blue pyramid map](examples/gallery/generated/06_arc_loops_and_genes.png)
+
+### Dark tracks-only composition with alternate 1D styles
+
+![K562 H3K27ac area, ATAC bars, CTCF points, peaks, and promoters](examples/gallery/generated/07_one_dimensional_tracks.png)
 
 ## Square (Juicebox-style) layout
 
@@ -138,7 +146,7 @@ map.add_highlight(MapHighlight{{"chr1", 21'000'000, 21'200'000},
 panel.set_matrix(std::move(map));
 ```
 
-`PairAnnotationStyle::loop` draws an ellipse at each anchor intersection,
+`PairAnnotationStyle::loop` draws a circle at each anchor intersection,
 `box` draws a rectangle, and `domain` draws a triangular domain outline against
 the diagonal. `AnnotationSide::above`, `below`, and `both` control which half
 of a square map receives intra-chromosomal annotations. In pyramid layout the
@@ -209,7 +217,7 @@ directly from the CLI:
 
 The first positional argument is always the primary `.hic` file. A later bare
 `CHR:START-END` token sets the x region; other bare paths create tracks or
-BEDPE overlays according to their extension.
+BEDPE layers according to their extension.
 
 Global options may appear anywhere. Per-track options apply to the most
 recently named track file:
@@ -489,8 +497,9 @@ genomic axis.
 
 #### Tracks only
 
-`--no-map` produces a conventional stacked-track figure. BEDPE overlays and map
-highlights are rejected in this mode because there is no 2D drawing area.
+`--no-map` produces a conventional stacked-track figure. BEDPE arc tracks are
+allowed; 2D BEDPE overlays and map highlights are rejected because there is no
+2D drawing area.
 
 ```bash
 ./build/tools/gre_plot sample.hic chr12:10Mb-12Mb --no-map \
@@ -517,8 +526,8 @@ sampling resolution requested from the matrix source.
 
 Track files are recognised by extension — bigWig/bedGraph/wig become signal
 tracks, BED/GFF/GTF/genePred/bigBed gene tracks, narrowPeak/broadPeak interval
-tracks, and `.bedpe`/`.bedpe.gz` files become 2D map overlays. `--type`
-overrides the guess.
+tracks, and `.bedpe`/`.bedpe.gz` files become 2D map overlays by default or 1D
+rows with `--style arc`. `--type` overrides the guess.
 
 Public HTTP(S) URLs can be used anywhere a path is accepted. `.hic`, bigWig,
 bigBed, and other indexed binary formats require a server that honors byte
@@ -598,7 +607,7 @@ Each applies to the track file it follows.
 | `--baseline V` | where area and bar tracks are anchored | `0` |
 | `--log` | log value scaling | off |
 | `--style line\|area\|bars\|points` | how a signal is drawn | `area` |
-| `--style loop\|box\|domain` | how a BEDPE layer is drawn | `loop` |
+| `--style loop\|box\|domain\|arc` | draw BEDPE on the map, or as a separate 1D arc row | `loop` |
 | `--aggregate mean\|max\|min\|sum` | how records are combined into a bin | `mean` |
 | `--line-width PT` | stroke width for `line` and `points` | `0.8` |
 | `--y-axis` | ticked y axis in the gutter instead of a range label | off |
@@ -615,7 +624,50 @@ Each applies to the track file it follows.
 | `--score-filter-min V` / `--score-filter-max V` | retain BEDPE records whose finite column-8 score is in range | no filtering |
 | `--score-opacity A,B` | map low/high BEDPE scores to opacity in `[0,1]` | fixed opacity |
 | `--score-line-width A,B` | map low/high BEDPE scores to outline width in points | fixed `--line-width` |
-| `--score-size A,B` | map low/high BEDPE scores to marker-size multipliers | `1,1` |
+| `--score-size A,B` | map low/high BEDPE scores to marker-size, or arc-height, multipliers | `1,1` |
+| `--arc-curvature N` | for `--style arc`, arc height divided by endpoint span before clipping to the row | `0.5` |
+
+### BEDPE arc tracks
+
+`--style arc` changes a BEDPE input from a 2D map overlay into a separate 1D
+track. Each supplied pair is projected to the midpoint of its two anchors and
+joined by an upward arc. This is a coordinate-only rendering operation: GRE
+does not call loops, merge records, calculate significance, or aggregate the
+contact matrix.
+
+```bash
+./build/tools/gre_plot sample.hic chr8:126.8Mb-128.6Mb \
+    --layout pyramid --norm SCALE \
+    genes.gtf.gz --name Genes --height 70 \
+    loops.bedpe.gz --style arc --name Loops --height 88 \
+      --score-filter-min 40 --colormap plasma \
+      --score-opacity 0.4,1 --score-line-width 0.7,2.4 \
+      --score-size 0.7,1.25 --fill '#7A017720' \
+      --arc-curvature 0.42 \
+    --out arc_loops
+```
+
+Arc height normally grows with endpoint separation and is clipped to the
+track's available height. `--arc-curvature` controls that growth;
+`--score-size` multiplies height by the normalized BEDPE score. Longer arcs are
+painted first so shorter local interactions remain visible. `--fill` adds a
+translucent dome under each arc, `--dashed`/`--dash` affect the stroke, and the
+same score filtering, colour, opacity, and line-width options used by 2D loop
+overlays apply unchanged. `--labels` places the BEDPE name above the apex.
+
+In C++ the corresponding track is `ArcTrack`:
+
+```cpp
+panel.add_track(
+    ArcTrack{BedpeSource::open("loops.bedpe.gz")}
+        .name("Loops")
+        .height(88)
+        .color_by_score("plasma")
+        .opacity_by_score(0.4, 1.0)
+        .line_width_by_score(0.7, 2.4)
+        .height_by_score(0.7, 1.25)
+        .curvature(0.42));
+```
 
 ### BEDPE input contract
 
@@ -636,6 +688,12 @@ are ignored.
 Juicer-style ENCODE BEDPE files commonly leave column 8 empty, put itemRgb in
 column 11, and put observed/domain score in column 12. GRE uses that column-12
 value as the score fallback when column 8 is missing.
+
+For GTF/GFF gene tracks, records sharing a `transcript_id` are assembled into
+one transcript model. `exon` rows become exon blocks, `CDS` rows define the
+thicker coding range, and transcript/gene names are retained for labels. This
+assembly is purely structural parsing of the supplied annotation; GRE does not
+infer transcripts or modify their coordinates.
 
 For example:
 
@@ -991,7 +1049,7 @@ still missing without crossing that boundary.
 |---|---|---|---|
 | Difference, ratio, and log-ratio display | direct condition A vs B comparison | split VS display only | optional cell-wise display transforms over already aligned matrices, with explicit zero/missing policies; no statistical testing |
 | Directional/anchored loops | promoter–enhancer direction or motif orientation | strands are retained but not rendered | arrowheads, anchor glyphs, asymmetric anchor colours, and strand-aware orientation |
-| Arc/link tracks | compact interactions above a 1D locus | pair geometry exists only on the matrix | dedicated arc track with span-derived height and the existing score style channels |
+| Arc/link tracks | compact interactions above a 1D locus | implemented: `ArcTrack` / `--style arc`, span-derived height, fill/dashes/labels, and score-driven colour, opacity, width, and height | optional directional arrowheads and separate anchor styling |
 | Stripes and extrusion trails | vertical/horizontal structures called elsewhere | rectangular highlights approximate bands | supplied stripe polygons/anchors, tapered ends, gradients, and score styling |
 | Nested TAD presentation | visualize supplied domain hierarchy | several BEDPE layers work manually | level-aware packing, side assignment, labels, and a domain legend without domain calling |
 | Diagonal distance guides | label 100 kb, 500 kb, or 1 Mb separation | diagonal and pyramid depth only | parallel contours, labels, and shaded distance bands computed only from coordinates |

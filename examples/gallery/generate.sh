@@ -14,6 +14,10 @@ LOOPS='https://www.encodeproject.org/files/ENCFF134HIZ/@@download/ENCFF134HIZ.be
 DOMAINS='https://www.encodeproject.org/files/ENCFF173VDJ/@@download/ENCFF173VDJ.bedpe.gz'
 H3K27AC_PEAKS='https://www.encodeproject.org/files/ENCFF045OHM/@@download/ENCFF045OHM.bigBed'
 PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MUK.gtf.gz'
+H3K27AC_SIGNAL='https://www.encodeproject.org/files/ENCFF094XCU/@@download/ENCFF094XCU.bigWig'
+ATAC_SIGNAL='https://www.encodeproject.org/files/ENCFF357GNC/@@download/ENCFF357GNC.bigWig'
+CTCF_SIGNAL='https://www.encodeproject.org/files/ENCFF336UPT/@@download/ENCFF336UPT.bigWig'
+TRANSCRIPTS='https://www.encodeproject.org/files/ENCFF688NNQ/@@download/ENCFF688NNQ.gtf.gz'
 
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout pyramid --norm SCALE --resolution 25000 --max-distance 1200000 \
@@ -92,5 +96,39 @@ PROMOTERS='https://www.encodeproject.org/files/ENCFF005MUK/@@download/ENCFF005MU
   --h-highlight chr8:129650000-129725000 \
     --highlight-color '#FFEA0020' --highlight-border '#FFEA00' \
   --out "$OUT_DIR/05_off_diagonal_rectangle"
+
+"$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
+  --layout pyramid --norm SCALE --resolution 25000 --max-distance 700000 \
+  --map-colors blues --map-percentile 0.995 \
+  --width 7 --label-width 110 --dpi 150 --formats png --theme publication \
+  --title 'K562 — loops as arcs above a blue contact map' \
+  "$TRANSCRIPTS" --name 'K562 transcript models' --height 70 \
+    --row-height 13 --color '#1B7837' --no-labels \
+  "$H3K27AC_SIGNAL" --name 'H3K27ac –log10(p)' --height 34 \
+    --style area --color '#D95F0E' --percentile 0.995 \
+  "$ATAC_SIGNAL" --name 'ATAC –log10(p)' --height 32 \
+    --style line --color '#008B8B' --line-width 1.1 --percentile 0.995 \
+  "$LOOPS" --style arc --name 'loops (observed)' --height 88 \
+    --score-filter-min 40 --colormap plasma --score-opacity 0.45,1 \
+    --score-line-width 0.7,2.4 --score-size 0.7,1.25 \
+    --fill '#7A017720' --arc-curvature 0.42 \
+  "$DOMAINS" --style domain --side above --color '#4D4D4D' --dashed \
+  --out "$OUT_DIR/06_arc_loops_and_genes"
+
+"$GRE_PLOT" "$HIC" chr8:127200000-128200000 \
+  --no-map --norm SCALE --width 7 --label-width 110 --dpi 150 --formats png --theme dark \
+  --title 'K562 — 1D track styles at MYC' \
+  --subtitle 'area, bars, points, and scored intervals from public ENCODE URLs' \
+  "$H3K27AC_SIGNAL" --name 'H3K27ac area' --height 46 \
+    --style area --color '#FF9F1C' --percentile 0.995 --y-axis \
+  "$ATAC_SIGNAL" --name 'ATAC bars' --height 44 \
+    --style bars --color '#2EC4B6' --percentile 0.995 --aggregate max \
+  "$CTCF_SIGNAL" --name 'CTCF points' --height 42 \
+    --style points --color '#E056FD' --line-width 1.4 --percentile 0.995 \
+  "$H3K27AC_PEAKS" --type interval --name 'H3K27ac peaks' --height 24 \
+    --colormap viridis --no-labels \
+  "$PROMOTERS" --type interval --name 'GENCODE promoters' --height 24 \
+    --color '#F4D35E' --no-labels \
+  --out "$OUT_DIR/07_one_dimensional_tracks"
 
 printf 'Generated gallery PNGs in %s\n' "$OUT_DIR"

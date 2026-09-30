@@ -60,6 +60,7 @@ struct TrackSpec {
     std::optional<double> row_height;
     std::optional<double> line_width;
     std::optional<double> baseline;
+    std::optional<double> arc_curvature;
     std::optional<std::string> aggregate;
     bool log{false};
     bool y_axis{false};
@@ -266,6 +267,12 @@ PairAnnotationStyle parse_annotation_style(const std::string& text) {
                 "unknown BEDPE style '" + text + "' (use loop, box, or domain)");
 }
 
+bool is_arc_track(const TrackSpec& spec) {
+    if (spec.kind != TrackKind::bedpe || !spec.style.has_value()) return false;
+    const std::string value = lower(*spec.style);
+    return value == "arc" || value == "arcs" || value == "link" || value == "links";
+}
+
 SignalStyle parse_style(const std::string& text) {
     const std::string value = lower(text);
     if (value == "line") return SignalStyle::line;
@@ -349,7 +356,7 @@ void print_usage(const char* program) {
         "Options after a track file apply to that track.  Track files are\n"
         "recognised by extension: bigWig/bedGraph/wig become signal tracks,\n"
         "BED/GFF/GTF/bigBed gene tracks, narrowPeak/broadPeak interval tracks,\n"
-        "and BEDPE map overlays.\n"
+        "and BEDPE map overlays or 1D arc tracks.\n"
         "\n"
         "Global:\n"
         "  --region CHR:START-END   region to plot (also accepted bare)\n"
@@ -412,7 +419,7 @@ void print_usage(const char* program) {
         "  --baseline V             where area and bar tracks are anchored\n"
         "  --log                    log value scaling\n"
         "  --style line|area|bars|points       signal style, default area\n"
-        "          loop|box|domain             BEDPE overlay style\n"
+        "          loop|box|domain|arc         BEDPE map/1D style\n"
         "  --aggregate mean|max|min|sum        binning, default mean\n"
         "  --line-width PT\n"
         "  --y-axis                 ticked y axis instead of a range label\n"
@@ -430,12 +437,15 @@ void print_usage(const char* program) {
         "  --score-opacity A,B      map low/high BEDPE scores to opacity\n"
         "  --score-line-width A,B   map scores to outline width in points\n"
         "  --score-size A,B         map scores to marker-size multipliers\n"
+        "                           (arc-height multipliers for --style arc)\n"
+        "  --arc-curvature N        arc height / endpoint span (default 0.5)\n"
         "\n"
         "Scoping rules:\n"
         "  Global options may appear anywhere. Per-track options apply to the\n"
-        "  most recently named track file. BEDPE files are overlays on the map,\n"
-        "  not separate rows. Highlight styling applies to the most recently\n"
-        "  declared --v-highlight, --h-highlight or --xy-highlight.\n"
+        "  most recently named track file. BEDPE files are map overlays except\n"
+        "  with --style arc, which creates a 1D row. Highlight styling applies\n"
+        "  to the most recently declared --v-highlight, --h-highlight or\n"
+        "  --xy-highlight.\n"
         "  --panel starts a new scope: following tracks and highlights belong\n"
         "  to that panel. --virtual4c creates a track, so track options that\n"
         "  follow it style that profile.\n"
@@ -762,6 +772,9 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             track_option("--no-symmetric").symmetric = false;
         } else if (argument == "--baseline") {
             track_option("--baseline").baseline = std::stod(value("--baseline"));
+        } else if (argument == "--arc-curvature") {
+            track_option("--arc-curvature").arc_curvature =
+                std::stod(value("--arc-curvature"));
         } else if (argument == "--log") {
             track_option("--log").log = true;
         } else if (argument == "--style") {
@@ -904,6 +917,43 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
                                                           spec.viewpoint->end) + ")"
             : stem(spec.path);
     const std::string name = spec.name.value_or(default_name);
+
+    if (is_arc_track(spec)) {
+        auto track = std::make_unique<ArcTrack>(source.pairs);
+        track->name(name)
+            .color(spec.color.value_or(rgb(30, 30, 30)))
+            .show_labels(spec.labels.value_or(false));
+        if (spec.height.has_value()) track->height(*spec.height);
+        if (spec.fill.has_value()) track->fill(*spec.fill);
+        if (spec.line_width.has_value()) track->line_width(*spec.line_width);
+        if (!spec.dash.empty()) track->dash(spec.dash);
+        if (spec.expansion > 0) track->expand(spec.expansion);
+        if (spec.arc_curvature.has_value()) track->curvature(*spec.arc_curvature);
+        if (spec.score_filter_min.has_value() || spec.score_filter_max.has_value()) {
+            track->score_filter(spec.score_filter_min, spec.score_filter_max);
+        }
+        if (spec.colormap.has_value()) {
+            ValueScale score_scale;
+            if (spec.minimum.has_value()) score_scale.min(*spec.minimum);
+            if (spec.maximum.has_value()) score_scale.max(*spec.maximum);
+            if (spec.percentile.has_value()) {
+                score_scale.upper_percentile(*spec.percentile);
+            }
+            track->color_by_score(*spec.colormap, score_scale);
+        }
+        if (spec.score_opacity.has_value()) {
+            track->opacity_by_score(spec.score_opacity->first,
+                                    spec.score_opacity->second);
+        }
+        if (spec.score_line_width.has_value()) {
+            track->line_width_by_score(spec.score_line_width->first,
+                                       spec.score_line_width->second);
+        }
+        if (spec.score_size.has_value()) {
+            track->height_by_score(spec.score_size->first, spec.score_size->second);
+        }
+        return track;
+    }
 
     if (spec.kind == TrackKind::signal || spec.kind == TrackKind::virtual4c) {
         auto track = std::make_unique<SignalTrack>(source.signal);
@@ -1178,7 +1228,10 @@ int main(int argc, char** argv) {
             panel.add_track(AxisTrack{}.show_region(!square));
             for (std::size_t i = 0; i < options.tracks.size(); ++i) {
                 const TrackSpec& spec = options.tracks[i];
-                if (spec.panel_index != p || spec.kind == TrackKind::bedpe) continue;
+                if (spec.panel_index != p ||
+                    (spec.kind == TrackKind::bedpe && !is_arc_track(spec))) {
+                    continue;
+                }
                 const bool on_x = spec.axis != TrackAxis::y || !square;
                 if (on_x) panel.add_track(build_track(spec, sources[i], /*vertical=*/false));
             }
@@ -1188,7 +1241,8 @@ int main(int argc, char** argv) {
                 panel.add_y_track(AxisTrack{}.position(AxisPosition::bottom).height(26.0));
                 for (std::size_t i = 0; i < options.tracks.size(); ++i) {
                     const TrackSpec& spec = options.tracks[i];
-                    if (spec.panel_index != p || spec.kind == TrackKind::bedpe ||
+                    if (spec.panel_index != p ||
+                        (spec.kind == TrackKind::bedpe && !is_arc_track(spec)) ||
                         spec.axis == TrackAxis::x) {
                         continue;
                     }
@@ -1211,7 +1265,8 @@ int main(int argc, char** argv) {
                 maps.push_back(map);
                 for (std::size_t i = 0; i < options.tracks.size(); ++i) {
                     if (options.tracks[i].panel_index == p &&
-                        options.tracks[i].kind == TrackKind::bedpe) {
+                        options.tracks[i].kind == TrackKind::bedpe &&
+                        !is_arc_track(options.tracks[i])) {
                         map->add_annotation(build_annotation(options.tracks[i], sources[i]));
                     }
                 }
@@ -1253,7 +1308,8 @@ int main(int argc, char** argv) {
             } else {
                 const bool has_overlay = std::any_of(
                     options.tracks.begin(), options.tracks.end(), [p](const TrackSpec& spec) {
-                        return spec.panel_index == p && spec.kind == TrackKind::bedpe;
+                        return spec.panel_index == p && spec.kind == TrackKind::bedpe &&
+                               !is_arc_track(spec);
                     });
                 const bool has_highlight = std::any_of(
                     options.highlights.begin(), options.highlights.end(),

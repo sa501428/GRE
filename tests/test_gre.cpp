@@ -701,6 +701,52 @@ void test_score_styled_pairs() {
     CHECK(layer.size_for(low) < layer.size_for(high));
 }
 
+void test_arc_track() {
+    PairFeature retained;
+    retained.first = GenomicRegion{"chr1", 100, 140};
+    retained.second = GenomicRegion{"chr1", 760, 800};
+    retained.name = "retained";
+    retained.score = 10.0;
+    PairFeature filtered = retained;
+    filtered.first = GenomicRegion{"chr1", 250, 280};
+    filtered.second = GenomicRegion{"chr1", 450, 480};
+    filtered.score = 1.0;
+
+    auto source = MemoryPairFeatureSource::make({retained, filtered});
+    ArcTrack prepared{source};
+    prepared.score_filter(5.0).color_by_score("viridis").height_by_score(0.8, 1.2);
+    ViewContext context;
+    context.x_region = GenomicRegion{"chr1", 0, 1000};
+    context.y_region = context.x_region;
+    context.content = Rect{0.0, 0.0, 100.0, 50.0};
+    prepared.prepare(context);
+    CHECK(prepared.features().size() == 1);
+    CHECK(prepared.features().front().name == "retained");
+
+    Figure figure;
+    figure.set_width(140.0).set_margins(Insets{0.0});
+    Panel& panel = figure.add_panel();
+    panel.set_region("chr1", 0, 1000).set_label_width(0.0).set_show_grid(false);
+    panel.add_track(ArcTrack{source}
+                        .height(50.0)
+                        .color(colors::red)
+                        .line_width(1.5)
+                        .fill(rgba(214, 39, 40, 30))
+                        .score_filter(5.0));
+    const Image image = figure.render_image(72.0);
+    bool has_red_arc = false;
+    for (int y = 0; y < image.height() && !has_red_arc; ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const Color pixel = image.get(x, y);
+            if (pixel.r > 170 && pixel.r > pixel.g * 2 && pixel.r > pixel.b * 2) {
+                has_red_arc = true;
+                break;
+            }
+        }
+    }
+    CHECK(has_red_arc);
+}
+
 void test_virtual4c_source() {
     const GenomicRegion region{"chr1", 0, 400};
     const std::vector<float> values = {
@@ -832,6 +878,29 @@ void test_gene_packing() {
     collapsed.collapsed(true).show_labels(false);
     collapsed.prepare(context);
     CHECK(collapsed.rows() == 1);
+}
+
+void test_gtf_transcript_assembly() {
+    const auto gtf_path = scratch("gre_test_models.gtf");
+    {
+        std::ofstream out(gtf_path);
+        out << "chr1\ttest\ttranscript\t101\t300\t.\t+\t.\t"
+               "gene_id \"g1\"; transcript_id \"tx1\"; gene_name \"GENE1\";\n";
+        out << "chr1\ttest\texon\t101\t150\t.\t+\t.\t"
+               "gene_id \"g1\"; transcript_id \"tx1\"; gene_name \"GENE1\";\n";
+        out << "chr1\ttest\texon\t251\t300\t.\t+\t.\t"
+               "gene_id \"g1\"; transcript_id \"tx1\"; gene_name \"GENE1\";\n";
+        out << "chr1\ttest\tCDS\t121\t280\t.\t+\t0\t"
+               "gene_id \"g1\"; transcript_id \"tx1\"; gene_name \"GENE1\";\n";
+    }
+    auto source = IgvFeatureSource::open(gtf_path.string());
+    const std::vector<Feature> models = source->query(GenomicRegion{"chr1", 0, 500});
+    CHECK(models.size() == 1);
+    CHECK(models[0].name == "GENE1");
+    CHECK(models[0].start == 100 && models[0].end == 300);
+    CHECK(models[0].exons.size() == 2);
+    CHECK(models[0].thick_start == 120 && models[0].thick_end == 280);
+    std::filesystem::remove(gtf_path);
 }
 
 void test_full_render() {
@@ -977,10 +1046,12 @@ int main() {
     test_split_map();
     test_pair_sources_and_overlays();
     test_score_styled_pairs();
+    test_arc_track();
     test_virtual4c_source();
     test_shared_heatmap_scale();
     test_symmetric_scale();
     test_gene_packing();
+    test_gtf_transcript_assembly();
     test_full_render();
     test_font_subset();
     test_dashes();

@@ -42,6 +42,7 @@
 #include "gre/render/text.hpp"
 
 #include "gre/tracks/axis_track.hpp"
+#include "gre/tracks/arc_track.hpp"
 #include "gre/tracks/gene_track.hpp"
 #include "gre/tracks/heatmap_track.hpp"
 #include "gre/tracks/interval_track.hpp"
