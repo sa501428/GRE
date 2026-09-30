@@ -915,9 +915,8 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
 
     if (is_arc_track(spec)) {
         auto track = std::make_unique<ArcTrack>(source.pairs);
-        track->name(name)
-            .color(spec.color.value_or(rgb(30, 30, 30)))
-            .show_labels(spec.labels.value_or(false));
+        track->name(name).show_labels(spec.labels.value_or(false));
+        if (spec.color.has_value()) track->color(*spec.color);
         if (spec.height.has_value()) track->height(*spec.height);
         if (spec.fill.has_value()) track->fill(*spec.fill);
         if (spec.line_width.has_value()) track->line_width(*spec.line_width);
@@ -1007,7 +1006,7 @@ PairAnnotationLayer build_annotation(const TrackSpec& spec, const LoadedSource& 
     layer.style(spec.style.has_value() ? parse_annotation_style(*spec.style)
                                        : PairAnnotationStyle::loop);
     layer.side(spec.annotation_side);
-    layer.color(spec.color.value_or(rgb(30, 30, 30)));
+    if (spec.color.has_value()) layer.color(*spec.color);
     if (spec.fill.has_value()) layer.fill(*spec.fill);
     if (spec.line_width.has_value()) layer.line_width(*spec.line_width);
     if (!spec.dash.empty()) layer.dash(spec.dash);

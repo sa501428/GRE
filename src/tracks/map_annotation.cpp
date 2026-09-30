@@ -25,6 +25,7 @@ PairAnnotationLayer& PairAnnotationLayer::side(AnnotationSide value) {
 }
 PairAnnotationLayer& PairAnnotationLayer::color(Color value) {
     color_ = value;
+    color_override_ = true;
     return *this;
 }
 PairAnnotationLayer& PairAnnotationLayer::fill(Color value) {
@@ -111,7 +112,7 @@ Color PairAnnotationLayer::color_for(const PairFeature& feature) const noexcept 
     const double unit = score_unit(feature, fitted_score_scale_);
     Color result = score_colors_.has_value() && std::isfinite(unit)
                        ? score_colors_->at(unit)
-                       : feature.color.value_or(color_);
+                       : color_override_ ? color_ : feature.color.value_or(color_);
     return with_alpha(result, interpolate_range(score_opacity_, unit, 1.0));
 }
 Color PairAnnotationLayer::fill_for(const PairFeature& feature) const noexcept {

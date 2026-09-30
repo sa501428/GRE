@@ -1,5 +1,6 @@
 #include <zlib.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -671,8 +672,44 @@ void test_pair_sources_and_overlays() {
     CHECK(red_right >= red_left && red_bottom >= red_top);
     CHECK(std::abs((red_right - red_left) - (red_bottom - red_top)) <= 1);
 
+    // A square-map domain has a filled triangle but only two stroked legs.
+    PairFeature domain;
+    domain.first = GenomicRegion{"chr1", 100, 110};
+    domain.second = GenomicRegion{"chr1", 700, 710};
+    Figure domain_figure;
+    domain_figure.set_width(104.0).set_margins(Insets{0.0});
+    Panel& domain_panel = domain_figure.add_panel();
+    domain_panel.set_region("chr1", 0, 1000).set_label_width(0.0);
+    HeatmapTrack domain_map{matrix};
+    domain_map.colors(ColorMap::from_stops({colors::white, colors::white}))
+        .limits(0.0, 1.0)
+        .margins(Insets{0.0})
+        .show_name(false)
+        .add_annotation(PairAnnotationLayer{MemoryPairFeatureSource::make({domain})}
+                            .style(PairAnnotationStyle::domain)
+                            .side(AnnotationSide::above)
+                            .color(colors::red));
+    domain_panel.set_matrix(std::move(domain_map));
+    const auto domain_svg_path = scratch("gre_test_domain_legs.svg");
+    domain_figure.save_svg(domain_svg_path.string());
+    std::ifstream domain_svg_stream(domain_svg_path);
+    const std::string domain_svg((std::istreambuf_iterator<char>(domain_svg_stream)),
+                                 std::istreambuf_iterator<char>());
+    const std::size_t red_stroke = domain_svg.find("stroke=\"#FF0000\"");
+    CHECK(red_stroke != std::string::npos);
+    if (red_stroke != std::string::npos) {
+        const std::size_t points_start = domain_svg.rfind("<polyline points=\"", red_stroke);
+        const std::size_t points_end = domain_svg.find('"', points_start + 18);
+        CHECK(points_start != std::string::npos);
+        if (points_start != std::string::npos && points_end != std::string::npos) {
+            const std::string points = domain_svg.substr(points_start, points_end - points_start);
+            CHECK(std::count(points.begin(), points.end(), ',') == 3);
+        }
+    }
+
     std::filesystem::remove(bedpe_path);
     std::filesystem::remove(svg_path);
+    std::filesystem::remove(domain_svg_path);
 }
 
 void test_score_styled_pairs() {
@@ -699,6 +736,13 @@ void test_score_styled_pairs() {
     CHECK(layer.color_for(low).a < layer.color_for(high).a);
     CHECK(layer.line_width_for(low) < layer.line_width_for(high));
     CHECK(layer.size_for(low) < layer.size_for(high));
+
+    PairFeature rgb_feature;
+    rgb_feature.color = colors::red;
+    PairAnnotationLayer fixed_color{MemoryPairFeatureSource::make({rgb_feature})};
+    CHECK(fixed_color.color_for(rgb_feature) == colors::red);
+    fixed_color.color(colors::blue);
+    CHECK(fixed_color.color_for(rgb_feature) == colors::blue);
 }
 
 void test_arc_track() {

@@ -86,7 +86,7 @@ std::vector<Point> ellipse_points(const Rect& rect) {
 }
 
 Rect square_around(double x, double y, double diameter) {
-    diameter = std::max(4.0, diameter);
+    diameter = std::max(1.5, diameter);
     return Rect{x - diameter / 2.0, y - diameter / 2.0, diameter, diameter};
 }
 
@@ -699,7 +699,7 @@ void HeatmapTrack::draw_annotations(Canvas& canvas, const TrackRect& rect) const
                                     {rect.x.x(start), rect.y.x(end)},
                                     {rect.x.x(end), rect.y.x(end)}};
                     }
-                    paint_shape(canvas, triangle, feature_fill, stroke);
+                    paint_shape(canvas, triangle, feature_fill, stroke, false);
                     label_box = visible_box(rect.x, rect.y,
                                             GenomicRegion{first.chrom,
                                                           static_cast<std::int64_t>(start),

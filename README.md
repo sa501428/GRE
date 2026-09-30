@@ -47,11 +47,11 @@ fig.save_pdf("figure.pdf");
 
 ## ENCODE example gallery
 
-The gallery below is rendered from public ENCODE URLs. GRE range-queries the
-20.7 GB `.hic` and indexed bigWig/bigBed inputs in place; it does not download
+The gallery below is rendered from public ENCODE URLs, using K562 intact Hi-C.
+GRE range-queries the 33.8 GB `.hic` and indexed bigWig/bigBed inputs in place; it does not download
 those files in full. Each figure's exact command, input accession table, direct
 URLs, interpretation, and regeneration instructions are in the
-[complete gallery](examples/gallery/README.md). Run all seven with
+[complete gallery](examples/gallery/README.md). Run all ten with
 `./examples/gallery/generate.sh`.
 
 ### Pyramid with 1D tracks, domains, and score-styled loops
@@ -62,9 +62,9 @@ URLs, interpretation, and regeneration instructions are in the
 
 ![K562 square map with both-axis PC1, virtual 4C, domains, loops, and viewpoint highlight](examples/gallery/generated/02_square_rich_annotations.png)
 
-### VS mode: observed above and observed/expected below
+### VS mode: mapQ30 above and all contacts below
 
-![K562 split map with observed contacts and observed over expected](examples/gallery/generated/03_vs_observed_expected.png)
+![K562 intact Hi-C split map with mapQ30 and all contacts on linear scales](examples/gallery/generated/03_intact_mapq30_vs_all.png)
 
 ### Three square panels on a jointly fitted contact scale
 
@@ -81,6 +81,18 @@ URLs, interpretation, and regeneration instructions are in the
 ### Dark tracks-only composition with alternate 1D styles
 
 ![K562 H3K27ac area, ATAC bars, CTCF points, peaks, and promoters](examples/gallery/generated/07_one_dimensional_tracks.png)
+
+### Intact Hi-C at 5 kb in viridis
+
+![K562 intact Hi-C 5 kb square contact map in viridis](examples/gallery/generated/08_intact_5kb_viridis.png)
+
+### Intact Hi-C at 2 kb in blues
+
+![K562 intact Hi-C 2 kb square contact map in blues](examples/gallery/generated/09_intact_2kb_blues.png)
+
+### Intact Hi-C at 50 kb in reds
+
+![K562 intact Hi-C 50 kb pyramid contact map in reds](examples/gallery/generated/10_intact_50kb_reds.png)
 
 ## Square (Juicebox-style) layout
 
@@ -468,8 +480,9 @@ pt outlines, and 0.7–1.6× marker size:
 ```
 
 Use `--min` and `--max` after a BEDPE file to fix the score mapping across
-panels or samples. A recognizable per-record itemRgb is used when there is no
-score colormap; when `--colormap` is present, score colour takes precedence.
+panels or samples. A recognizable per-record itemRgb is used when neither
+`--color` nor `--colormap` is supplied. An explicit `--color` gives the layer
+one colour; `--colormap` maps scores to colours.
 Records without a finite score keep the ordinary layer colour and dimensions,
 unless any score filter is supplied, in which case unscored records are
 excluded because they cannot satisfy the filter.

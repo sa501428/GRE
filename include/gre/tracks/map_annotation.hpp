@@ -72,6 +72,7 @@ private:
     PairAnnotationStyle style_{PairAnnotationStyle::loop};
     AnnotationSide side_{AnnotationSide::both};
     Color color_{rgb(30, 30, 30)};
+    bool color_override_{false};
     Color fill_{colors::transparent};
     double line_width_{1.2};
     std::vector<double> dash_;
