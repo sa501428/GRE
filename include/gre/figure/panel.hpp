@@ -81,7 +81,8 @@ public:
     }
     Track& add_bottom_track(std::unique_ptr<Track> track);
 
-    [[nodiscard]] bool square_layout() const noexcept { return matrix_ != nullptr; }
+    [[nodiscard]] bool matrix_layout() const noexcept { return matrix_ != nullptr; }
+    [[nodiscard]] bool square_layout() const noexcept { return matrix_layout(); }
     // By default the matrix is square; use a positive height for a rectangle.
     Panel& set_matrix_height(double height);
     [[nodiscard]] Track* matrix() noexcept { return matrix_.get(); }

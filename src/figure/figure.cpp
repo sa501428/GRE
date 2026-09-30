@@ -208,7 +208,7 @@ Figure::Layout Figure::build_layout(double device_scale) {
         state.map_left = state.plot_left;
         state.map_side = state.plot_right - state.plot_left;
         state.map_height = panel.matrix_height_ > 0.0 ? panel.matrix_height_ : state.map_side;
-        if (panel.square_layout()) {
+        if (panel.matrix_layout()) {
             const double available = state.plot_right - state.plot_left;
             state.y_widths.resize(panel.y_tracks_.size());
 
@@ -299,7 +299,7 @@ Figure::Layout Figure::build_layout(double device_scale) {
         // The panel is up to three horizontal bands: tracks, then the
         // map (when there is one), then the bottom tracks.
         double content_height = top_stack;
-        if (panel.square_layout()) {
+        if (panel.matrix_layout()) {
             ViewContext matrix_context = context;
             matrix_context.content = Rect{state.map_left, 0.0, state.map_side,
                                           state.map_height};
@@ -309,11 +309,11 @@ Figure::Layout Figure::build_layout(double device_scale) {
                               state.y_label_height;
         }
         // Linked colour bars read their fitted scale from the matrix, so the
-        // matrix must be prepared before the bottom band in square layout.
+        // matrix must be prepared before the bottom band in matrix layout.
         const double bottom_stack =
             prepare_band(panel.bottom_tracks_, state.bottom_heights, state.bottom_flex);
         if (!panel.bottom_tracks_.empty()) {
-            if (!panel.tracks_.empty() || panel.square_layout()) content_height += state.spacing;
+            if (!panel.tracks_.empty() || panel.matrix_layout()) content_height += state.spacing;
             content_height += bottom_stack;
         }
 
@@ -422,7 +422,7 @@ Figure::Layout Figure::build_layout(double device_scale) {
 
         place_band(panel.tracks_, state.heights);
 
-        if (panel.square_layout()) {
+        if (panel.matrix_layout()) {
             if (placed_anything) y += state.spacing;
             const Insets& matrix_margins = panel.matrix_->margins();
             y += matrix_margins.top;
