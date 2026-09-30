@@ -54,7 +54,7 @@ URLs, interpretation, and regeneration instructions are in the
 [complete gallery](examples/gallery/README.md). Run all ten with
 `./examples/gallery/generate.sh`.
 
-### Pyramid with 1D tracks, domains, and score-styled loops
+### Pyramid with 1D tracks, domains, and small loop markers
 
 ![K562 pyramid with ENCODE compartment, H3K27ac, promoter, domain, and loop annotations](examples/gallery/generated/01_pyramid_tracks.png)
 
@@ -723,9 +723,10 @@ The three styles have distinct geometry:
   the anchors have different widths or the map itself is rectangular. Very
   narrow anchors receive a minimum visible size.
 - `box` draws the rectangular product of the two anchor intervals.
-- `domain` draws a triangle bounded by the diagonal in square and pyramid
-  views. In a non-diagonal rectangle it falls back to a box because there is no
-  meaningful diagonal domain triangle.
+- `domain` fills a triangle bounded by the diagonal in square and pyramid
+  views. In square views its outline draws only the horizontal and vertical
+  legs, leaving the matrix diagonal unobscured. In a non-diagonal rectangle it
+  falls back to a box because there is no meaningful diagonal domain triangle.
 
 `--expand 5kb` subtracts 5 kb from each anchor start and adds 5 kb to each
 anchor end, clamping starts at zero. It affects geometry, not BEDPE filtering.

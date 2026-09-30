@@ -82,7 +82,7 @@ TRANSCRIPTS='https://www.encodeproject.org/files/ENCFF688NNQ/@@download/ENCFF688
 "$GRE_PLOT" "$HIC" chr8:126500000-128300000 \
   --layout rectangle --region-y chr8:128000000-130000000 \
   --norm SCALE --resolution 10000 --map-height 260 --map-linear \
-  --map-colors magma --map-percentile 0.92 \
+  --map-colors magma --map-percentile 0.97 \
   --width 7 --dpi 300 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \
   "$LOOPS" --style box --fill '#FFFFFF12' --color '#B4BFC9' \
@@ -104,8 +104,8 @@ TRANSCRIPTS='https://www.encodeproject.org/files/ENCFF688NNQ/@@download/ENCFF688
     --style area --color '#D95F0E' --percentile 0.995 \
   "$ATAC_SIGNAL" --name 'ATAC –log10(p)' --height 32 \
     --style line --color '#008B8B' --line-width 1.1 --percentile 0.995 \
-  "$LOOPS" --style arc --name 'loops (observed)' --height 180 \
-    --score-filter-min 60 --color '#753A8A' --line-width 0.85 \
+  "$LOOPS" --style arc --name 'loops (observed)' --height 88 \
+    --score-filter-min 60 --color '#753A8A' --line-width 1.2 \
     --fill '#7A017720' \
   "$DOMAINS" --style domain --side above --color '#4D4D4D' --dashed \
   --out "$OUT_DIR/06_arc_loops_and_genes"

@@ -695,13 +695,12 @@ void test_pair_sources_and_overlays() {
     std::ifstream domain_svg_stream(domain_svg_path);
     const std::string domain_svg((std::istreambuf_iterator<char>(domain_svg_stream)),
                                  std::istreambuf_iterator<char>());
-    const std::size_t red_stroke = domain_svg.find("stroke=\"#FF0000\"");
-    CHECK(red_stroke != std::string::npos);
-    if (red_stroke != std::string::npos) {
-        const std::size_t points_start = domain_svg.rfind("<polyline points=\"", red_stroke);
+    const std::size_t points_start = domain_svg.find("<polyline points=\"");
+    CHECK(points_start != std::string::npos);
+    if (points_start != std::string::npos) {
         const std::size_t points_end = domain_svg.find('"', points_start + 18);
-        CHECK(points_start != std::string::npos);
-        if (points_start != std::string::npos && points_end != std::string::npos) {
+        CHECK(points_end != std::string::npos);
+        if (points_end != std::string::npos) {
             const std::string points = domain_svg.substr(points_start, points_end - points_start);
             CHECK(std::count(points.begin(), points.end(), ',') == 3);
         }
