@@ -294,8 +294,8 @@ The loop calls come from the same intact Hi-C experiment.
 ## 9. Local 2 kb map in Juicebox white-to-red
 
 A tighter 500 kb region shows the native 2 kb matrix bins with the pure
-white-to-red Juicebox palette, contrasting teal loop annotations above the diagonal, and a
-K562 CTCF signal track.
+white-to-red Juicebox palette, contrasting teal loop annotations above the
+diagonal, and a K562 CTCF signal track.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:127450000-127950000 \
