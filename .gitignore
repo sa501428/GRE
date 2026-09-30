@@ -1,4 +1,4 @@
 /build
 /.cache
 /build-asan
-examples/gallery/.DS_Store
+.DS_Store
