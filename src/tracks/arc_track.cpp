@@ -54,10 +54,6 @@ ArcTrack& ArcTrack::label_font_size(double value) {
     layer_.label_font_size(value);
     return *this;
 }
-ArcTrack& ArcTrack::curvature(double value) {
-    curvature_ = std::clamp(value, 0.05, 2.0);
-    return *this;
-}
 ArcTrack& ArcTrack::score_filter(std::optional<double> minimum,
                                  std::optional<double> maximum) {
     layer_.score_filter(minimum, maximum);
@@ -77,10 +73,6 @@ ArcTrack& ArcTrack::opacity_by_score(double minimum, double maximum) {
 }
 ArcTrack& ArcTrack::line_width_by_score(double minimum, double maximum) {
     layer_.line_width_by_score(minimum, maximum);
-    return *this;
-}
-ArcTrack& ArcTrack::height_by_score(double minimum, double maximum) {
-    layer_.size_by_score(minimum, maximum);
     return *this;
 }
 
@@ -109,7 +101,6 @@ void ArcTrack::draw(Canvas& canvas, const TrackRect& rect) const {
     label_style.valign = VerticalAlign::bottom;
 
     const double baseline = rect.content.bottom() - 1.0;
-    const double available_height = std::max(1.0, rect.content.height - 3.0);
     for (const PairFeature* feature_ptr : ordered) {
         const PairFeature& feature = *feature_ptr;
         const GenomicRegion first = expanded(feature.first, layer_.expansion());
@@ -120,15 +111,17 @@ void ArcTrack::draw(Canvas& canvas, const TrackRect& rect) const {
         const double span = std::fabs(x1 - x0);
         if (!(span > 0.0)) continue;
 
-        const double arc_height = std::min(
-            available_height, std::max(3.0, span * curvature_) * layer_.size_for(feature));
+        // The endpoints fix the diameter. Keep the same radius in x and y;
+        // clipping a tall arc preserves its circular shape.
+        const double radius = span / 2.0;
+        const double center_x = (x0 + x1) / 2.0;
         const int segments = std::clamp(static_cast<int>(std::ceil(span / 4.0)), 16, 160);
         std::vector<Point> arc;
         arc.reserve(static_cast<std::size_t>(segments) + 1);
         for (int i = 0; i <= segments; ++i) {
-            const double unit = static_cast<double>(i) / segments;
-            arc.push_back(Point{x0 + unit * (x1 - x0),
-                                baseline - std::sin(kPi * unit) * arc_height});
+            const double angle = kPi * static_cast<double>(i) / segments;
+            arc.push_back(Point{center_x - radius * std::cos(angle),
+                                baseline - radius * std::sin(angle)});
         }
 
         const Color fill = layer_.fill_for(feature);
@@ -151,7 +144,7 @@ void ArcTrack::draw(Canvas& canvas, const TrackRect& rect) const {
 
         if (layer_.labels_visible() && !feature.name.empty()) {
             label_style.color = stroke.color;
-            canvas.draw_text(Point{(x0 + x1) / 2.0, baseline - arc_height - 1.5},
+            canvas.draw_text(Point{center_x, baseline - radius - 1.5},
                              feature.name, label_style);
         }
     }

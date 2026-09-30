@@ -6,7 +6,7 @@ bigBed files are also queried remotely. Compressed BEDPE and GTF files are
 streamed directly and held in memory for the duration of a render.
 No ENCODE input needs to be downloaded or checked into this repository.
 
-The committed PNGs were generated at 150 DPI with:
+The committed PNGs were generated at 300 DPI with:
 
 ```bash
 ./examples/gallery/generate.sh
@@ -80,7 +80,7 @@ and marker size.
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout pyramid --norm SCALE --resolution 25000 --max-distance 1200000 \
-  --width 7 --dpi 150 --formats png --theme publication \
+  --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 — MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 28 --style area \
     --color '#B2182B' --neg-color '#2166AC' \
@@ -107,7 +107,7 @@ triangle; score-styled loops are mirrored into both triangles.
 ```bash
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout square --norm SCALE --resolution 25000 --map-percentile 0.995 \
-  --width 7 --dpi 150 --formats png --theme publication \
+  --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 — square map with 1D and 2D annotation' \
   "$COMPARTMENTS" --name 'PC1' --axis both --height 28 \
     --style area --color '#B2182B' --neg-color '#2166AC' \
@@ -138,7 +138,7 @@ legend. The BEDPE loop layer is drawn in both halves.
   --map-colors reds --map-percentile 0.995 \
   --vs "$HIC" --vs-oe --vs-side below --vs-map-colors rd_bu \
     --vs-map-min 0.25 --vs-map-max 4 \
-  --width 7 --dpi 150 --formats png --theme publication \
+  --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 — observed contacts vs observed/expected' \
   "$LOOPS" --style loop --side both --color '#202020' \
     --fill '#FFFFFF40' --line-width 0.9 \
@@ -160,7 +160,7 @@ panel-scoped.
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout square --norm SCALE --resolution 25000 \
   --shared-map-scale --panel-spacing 16 \
-  --width 7 --dpi 150 --formats png --theme publication \
+  --width 7 --dpi 300 --formats png --theme publication \
   --title 'K562 — three square maps on one shared contact scale' \
   --panel-title 'MYC neighborhood' \
   "$COMPARTMENTS" --name 'A/B compartment' --height 24 \
@@ -190,7 +190,7 @@ separate supplied genomic intervals across x and y as cyan and yellow bands.
   --layout rectangle --region-y chr8:128000000-130000000 \
   --norm SCALE --resolution 10000 --map-height 260 --map-linear \
   --map-colors magma --map-percentile 0.995 \
-  --width 7 --dpi 150 --formats png --theme dark \
+  --width 7 --dpi 300 --formats png --theme dark \
   --title 'K562 — off-diagonal contact block' \
   "$LOOPS" --style box --fill '#FFFFFF18' --colormap plasma \
     --score-filter-min 40 --score-opacity 0.45,1 \
@@ -221,7 +221,7 @@ a dashed 2D overlay on the contact map.
 "$GRE_PLOT" "$HIC" chr8:126500000-130000000 \
   --layout pyramid --norm SCALE --resolution 25000 --max-distance 700000 \
   --map-colors blues --map-percentile 0.995 \
-  --width 7 --label-width 110 --dpi 150 --formats png --theme publication \
+  --width 7 --label-width 110 --dpi 300 --formats png --theme publication \
   --title 'K562 — loops as arcs above a blue contact map' \
   "$TRANSCRIPTS" --name 'K562 transcript models' --height 70 \
     --row-height 13 --color '#1B7837' --no-labels \
@@ -229,10 +229,9 @@ a dashed 2D overlay on the contact map.
     --style area --color '#D95F0E' --percentile 0.995 \
   "$ATAC_SIGNAL" --name 'ATAC –log10(p)' --height 32 \
     --style line --color '#008B8B' --line-width 1.1 --percentile 0.995 \
-  "$LOOPS" --style arc --name 'loops (observed)' --height 88 \
+  "$LOOPS" --style arc --name 'loops (observed)' --height 180 \
     --score-filter-min 40 --colormap plasma --score-opacity 0.45,1 \
-    --score-line-width 0.7,2.4 --score-size 0.7,1.25 \
-    --fill '#7A017720' --arc-curvature 0.42 \
+    --score-line-width 0.7,2.4 --fill '#7A017720' \
   "$DOMAINS" --style domain --side above --color '#4D4D4D' --dashed \
   --out examples/gallery/generated/06_arc_loops_and_genes
 ```
@@ -249,7 +248,7 @@ with `viridis`, and GENCODE promoters as yellow intervals.
 
 ```bash
 "$GRE_PLOT" "$HIC" chr8:127200000-128200000 \
-  --no-map --norm SCALE --width 7 --label-width 110 --dpi 150 --formats png --theme dark \
+  --no-map --norm SCALE --width 7 --label-width 110 --dpi 300 --formats png --theme dark \
   --title 'K562 — 1D track styles at MYC' \
   --subtitle 'area, bars, points, and scored intervals from public ENCODE URLs' \
   "$H3K27AC_SIGNAL" --name 'H3K27ac area' --height 46 \

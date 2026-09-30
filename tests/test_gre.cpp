@@ -714,14 +714,41 @@ void test_arc_track() {
 
     auto source = MemoryPairFeatureSource::make({retained, filtered});
     ArcTrack prepared{source};
-    prepared.score_filter(5.0).color_by_score("viridis").height_by_score(0.8, 1.2);
+    prepared.score_filter(5.0).color_by_score("viridis");
     ViewContext context;
     context.x_region = GenomicRegion{"chr1", 0, 1000};
     context.y_region = context.x_region;
     context.content = Rect{0.0, 0.0, 100.0, 50.0};
+    Theme theme;
+    context.theme = &theme;
     prepared.prepare(context);
     CHECK(prepared.features().size() == 1);
     CHECK(prepared.features().front().name == "retained");
+
+    struct ArcCanvas final : Canvas {
+        std::vector<Point> arc;
+        Size size() const override { return {100.0, 50.0}; }
+        void fill_rect(const Rect&, Color) override {}
+        void stroke_rect(const Rect&, const StrokeStyle&) override {}
+        void stroke_line(Point, Point, const StrokeStyle&) override {}
+        void stroke_polyline(std::span<const Point> points, const StrokeStyle&) override {
+            arc.assign(points.begin(), points.end());
+        }
+        void fill_polygon(std::span<const Point>, Color, FillRule) override {}
+        void draw_text(Point, std::string_view, const TextStyle&) override {}
+        void draw_image(const Rect&, const ImageView&) override {}
+        void push_clip(const Rect&) override {}
+        void pop_clip() override {}
+    } arc_canvas;
+    TrackRect arc_rect;
+    arc_rect.content = context.content;
+    arc_rect.x = GenomicTransform{context.x_region, 0.0, 100.0};
+    prepared.draw(arc_canvas, arc_rect);
+    CHECK(arc_canvas.arc.size() > 16);
+    // Endpoints are at x=12 and x=78: every path vertex shares radius 33.
+    for (const Point point : arc_canvas.arc) {
+        CHECK_NEAR(std::hypot(point.x - 45.0, point.y - 49.0), 33.0, 1e-9);
+    }
 
     Figure figure;
     figure.set_width(140.0).set_margins(Insets{0.0});

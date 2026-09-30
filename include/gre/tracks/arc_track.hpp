@@ -26,16 +26,12 @@ public:
     ArcTrack& expand(std::int64_t bases);
     ArcTrack& show_labels(bool value);
     ArcTrack& label_font_size(double value);
-    // Arc height is min(span * curvature, available track height), before the
-    // optional score-derived size multiplier is applied.
-    ArcTrack& curvature(double value);
     ArcTrack& score_filter(std::optional<double> minimum,
                            std::optional<double> maximum = std::nullopt);
     ArcTrack& color_by_score(ColorMap colors, ValueScale scale = {});
     ArcTrack& color_by_score(const std::string& colors, ValueScale scale = {});
     ArcTrack& opacity_by_score(double minimum, double maximum);
     ArcTrack& line_width_by_score(double minimum, double maximum);
-    ArcTrack& height_by_score(double minimum, double maximum);
 
     void prepare(const ViewContext& context) override;
     void draw(Canvas& canvas, const TrackRect& rect) const override;
@@ -49,7 +45,6 @@ protected:
 
 private:
     PairAnnotationLayer layer_;
-    double curvature_{0.5};
 };
 
 }  // namespace gre

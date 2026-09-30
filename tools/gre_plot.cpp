@@ -60,7 +60,6 @@ struct TrackSpec {
     std::optional<double> row_height;
     std::optional<double> line_width;
     std::optional<double> baseline;
-    std::optional<double> arc_curvature;
     std::optional<std::string> aggregate;
     bool log{false};
     bool y_axis{false};
@@ -437,8 +436,7 @@ void print_usage(const char* program) {
         "  --score-opacity A,B      map low/high BEDPE scores to opacity\n"
         "  --score-line-width A,B   map scores to outline width in points\n"
         "  --score-size A,B         map scores to marker-size multipliers\n"
-        "                           (arc-height multipliers for --style arc)\n"
-        "  --arc-curvature N        arc height / endpoint span (default 0.5)\n"
+        "                           (not available for --style arc)\n"
         "\n"
         "Scoping rules:\n"
         "  Global options may appear anywhere. Per-track options apply to the\n"
@@ -772,9 +770,6 @@ bool parse_command_line(int argc, char** argv, Options& out) {
             track_option("--no-symmetric").symmetric = false;
         } else if (argument == "--baseline") {
             track_option("--baseline").baseline = std::stod(value("--baseline"));
-        } else if (argument == "--arc-curvature") {
-            track_option("--arc-curvature").arc_curvature =
-                std::stod(value("--arc-curvature"));
         } else if (argument == "--log") {
             track_option("--log").log = true;
         } else if (argument == "--style") {
@@ -928,7 +923,10 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
         if (spec.line_width.has_value()) track->line_width(*spec.line_width);
         if (!spec.dash.empty()) track->dash(spec.dash);
         if (spec.expansion > 0) track->expand(spec.expansion);
-        if (spec.arc_curvature.has_value()) track->curvature(*spec.arc_curvature);
+        if (spec.score_size.has_value()) {
+            throw Error(ErrorCode::invalid_argument,
+                        "--score-size cannot change the radius of a semicircular arc");
+        }
         if (spec.score_filter_min.has_value() || spec.score_filter_max.has_value()) {
             track->score_filter(spec.score_filter_min, spec.score_filter_max);
         }
@@ -948,9 +946,6 @@ std::unique_ptr<Track> build_track(const TrackSpec& spec, const LoadedSource& so
         if (spec.score_line_width.has_value()) {
             track->line_width_by_score(spec.score_line_width->first,
                                        spec.score_line_width->second);
-        }
-        if (spec.score_size.has_value()) {
-            track->height_by_score(spec.score_size->first, spec.score_size->second);
         }
         return track;
     }

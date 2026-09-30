@@ -624,14 +624,13 @@ Each applies to the track file it follows.
 | `--score-filter-min V` / `--score-filter-max V` | retain BEDPE records whose finite column-8 score is in range | no filtering |
 | `--score-opacity A,B` | map low/high BEDPE scores to opacity in `[0,1]` | fixed opacity |
 | `--score-line-width A,B` | map low/high BEDPE scores to outline width in points | fixed `--line-width` |
-| `--score-size A,B` | map low/high BEDPE scores to marker-size, or arc-height, multipliers | `1,1` |
-| `--arc-curvature N` | for `--style arc`, arc height divided by endpoint span before clipping to the row | `0.5` |
+| `--score-size A,B` | map low/high BEDPE scores to 2D marker-size multipliers; unavailable for arcs | `1,1` |
 
 ### BEDPE arc tracks
 
 `--style arc` changes a BEDPE input from a 2D map overlay into a separate 1D
 track. Each supplied pair is projected to the midpoint of its two anchors and
-joined by an upward arc. This is a coordinate-only rendering operation: GRE
+joined by an upward semicircle with radius equal to half the endpoint span. This is a coordinate-only rendering operation: GRE
 does not call loops, merge records, calculate significance, or aggregate the
 contact matrix.
 
@@ -639,17 +638,15 @@ contact matrix.
 ./build/tools/gre_plot sample.hic chr8:126.8Mb-128.6Mb \
     --layout pyramid --norm SCALE \
     genes.gtf.gz --name Genes --height 70 \
-    loops.bedpe.gz --style arc --name Loops --height 88 \
+    loops.bedpe.gz --style arc --name Loops --height 180 \
       --score-filter-min 40 --colormap plasma \
       --score-opacity 0.4,1 --score-line-width 0.7,2.4 \
-      --score-size 0.7,1.25 --fill '#7A017720' \
-      --arc-curvature 0.42 \
+      --fill '#7A017720' \
     --out arc_loops
 ```
 
-Arc height normally grows with endpoint separation and is clipped to the
-track's available height. `--arc-curvature` controls that growth;
-`--score-size` multiplies height by the normalized BEDPE score. Longer arcs are
+Each arc has a circular shape fixed by its endpoints. Arcs taller than the
+track are clipped; increase `--height` to show their full semicircles. Longer arcs are
 painted first so shorter local interactions remain visible. `--fill` adds a
 translucent dome under each arc, `--dashed`/`--dash` affect the stroke, and the
 same score filtering, colour, opacity, and line-width options used by 2D loop
@@ -661,12 +658,10 @@ In C++ the corresponding track is `ArcTrack`:
 panel.add_track(
     ArcTrack{BedpeSource::open("loops.bedpe.gz")}
         .name("Loops")
-        .height(88)
+        .height(180)
         .color_by_score("plasma")
         .opacity_by_score(0.4, 1.0)
-        .line_width_by_score(0.7, 2.4)
-        .height_by_score(0.7, 1.25)
-        .curvature(0.42));
+        .line_width_by_score(0.7, 2.4));
 ```
 
 ### BEDPE input contract
@@ -1049,7 +1044,7 @@ still missing without crossing that boundary.
 |---|---|---|---|
 | Difference, ratio, and log-ratio display | direct condition A vs B comparison | split VS display only | optional cell-wise display transforms over already aligned matrices, with explicit zero/missing policies; no statistical testing |
 | Directional/anchored loops | promoter–enhancer direction or motif orientation | strands are retained but not rendered | arrowheads, anchor glyphs, asymmetric anchor colours, and strand-aware orientation |
-| Arc/link tracks | compact interactions above a 1D locus | implemented: `ArcTrack` / `--style arc`, span-derived height, fill/dashes/labels, and score-driven colour, opacity, width, and height | optional directional arrowheads and separate anchor styling |
+| Arc/link tracks | compact interactions above a 1D locus | implemented: `ArcTrack` / `--style arc`, semicircular geometry, fill/dashes/labels, and score-driven colour, opacity, and width | optional directional arrowheads and separate anchor styling |
 | Stripes and extrusion trails | vertical/horizontal structures called elsewhere | rectangular highlights approximate bands | supplied stripe polygons/anchors, tapered ends, gradients, and score styling |
 | Nested TAD presentation | visualize supplied domain hierarchy | several BEDPE layers work manually | level-aware packing, side assignment, labels, and a domain legend without domain calling |
 | Diagonal distance guides | label 100 kb, 500 kb, or 1 Mb separation | diagonal and pyramid depth only | parallel contours, labels, and shaded distance bands computed only from coordinates |
